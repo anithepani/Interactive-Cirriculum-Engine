@@ -1,8 +1,9 @@
 """Groq-backed LLM client (Phase 0 / Week 1).
 
-Uses llama-3.1-70b-versatile on Groq (free tier). This is the first concrete
+Uses llama-3.3-70b-versatile on Groq (free tier). This is the first concrete
 implementation of the Hybrid LLM strategy (ADR 0001); GPT-4o routing lands later.
 """
+
 from __future__ import annotations
 
 import os
@@ -10,7 +11,7 @@ import time
 
 from groq import Groq, RateLimitError
 
-MODEL = "llama-3.1-70b-versatile"
+MODEL = "llama-3.3-70b-versatile"
 MAX_RETRIES = 2
 RETRY_SLEEP_SEC = 5
 
