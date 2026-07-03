@@ -1,0 +1,18 @@
+[project]
+name = "ice-exercise-gen"
+version = "0.1.0"
+description = "M7 Exercise Generation Engine - MCQ/coding/debug/conceptual via GPT-4o + Qwen-Coder fallback, few-shot concept-conditioned prompts. Lead: Aryan; Support: Ahmed."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["ice-shared", "ice-contracts", "ice-llm"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/ice_exercise_gen"]
+
+[tool.uv.sources]
+ice-shared = { workspace = true }
+ice-contracts = { workspace = true }
+ice-llm = { workspace = true }

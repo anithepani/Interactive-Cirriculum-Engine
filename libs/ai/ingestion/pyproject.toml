@@ -1,0 +1,18 @@
+[project]
+name = "ice-ingestion"
+version = "0.1.0"
+description = "M1 Ingestion Pipeline - yt-dlp download, ffmpeg demux/audio/frames, PySceneDetect shot boundaries, content-hash dedupe. Lead: Zubair; Support: Ahmed."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["ice-shared", "ice-contracts", "yt-dlp>=2024.8.6", "opencv-python>=4.10.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ice_ingestion"]
+
+[tool.uv.sources]
+ice-shared = { workspace = true }
+ice-contracts = { workspace = true }

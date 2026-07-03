@@ -1,0 +1,45 @@
+name: exercise_gen-coding
+version: 0.1.0
+model: gpt-4o
+fallback_model: Qwen/Qwen2.5-Coder-32B-Instruct
+tier: high_value
+temperature: 0.3
+max_tokens: 4096
+few_shot: true
+owner: aryan
+tags: [m7, exercise, coding, python]
+
+inputs:
+  - name: concept
+    type: string
+    description: The concept being tested (e.g. "Python dictionaries").
+    required: true
+  - name: concept_description
+    type: string
+    required: true
+  - name: difficulty
+    type: integer
+    description: 1-5 difficulty target.
+    required: true
+  - name: instructor_code
+    type: string
+    description: Code extracted from the instructor's screen (to AVOID copying - force transfer, not recall).
+    required: true
+  - name: segment_summary
+    type: string
+    required: true
+
+output_schema:
+  type: object
+  required: [prompt, starter, tests_visible, tests_hidden, reference_solution, constraints]
+  properties:
+    prompt: {type: string, description: "Exercise prompt in a NEW context (different from instructor's example)."}
+    starter: {type: string}
+    tests_visible: {type: array, items: {type: string}}
+    tests_hidden: {type: array, items: {type: string}, minItems: 1}
+    reference_solution: {type: string, description: "Python solution that passes all tests (validated by M8)."}
+    constraints: {type: array, items: {type: string}}
+
+eval_baseline:
+  agreement: 0.0
+  run_at: 2026-07-03T00:00:00Z

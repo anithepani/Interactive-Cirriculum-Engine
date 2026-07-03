@@ -1,0 +1,114 @@
+[project]
+name = "ice-monorepo"
+version = "0.1.0"
+description = "Dynamic Video to Interactive Curriculum Engine - AI platform that converts tutorial videos into interactive, adaptive learning sessions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [
+    { name = "Zubair" },
+    { name = "Aryan" },
+    { name = "Muhammad Ahmed" },
+]
+
+# Root project has no runtime deps of its own; all deps live in workspace members.
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+    "apps/api",
+    "apps/worker",
+    "libs/contracts",
+    "libs/shared",
+    "libs/ai/ingestion",
+    "libs/ai/transcript",
+    "libs/ai/vision",
+    "libs/ai/segmentation",
+    "libs/ai/concept_graph",
+    "libs/ai/checkpoints",
+    "libs/ai/exercise_gen",
+    "libs/ai/test_gen",
+    "libs/ai/evaluation",
+    "libs/ai/adaptive",
+    "libs/ai/progress",
+    "libs/ai/llm",
+]
+
+# Dev / shared tooling lives at the workspace root so every member inherits it.
+[tool.uv]
+dev-dependencies = [
+    "ruff>=0.6.9",
+    "mypy>=1.11.2",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "ipython>=8.27",
+]
+
+[tool.uv.sources]
+# Workspace members resolve each other via editable installs.
+ice-contracts = { workspace = true }
+ice-shared = { workspace = true }
+ice-ingestion = { workspace = true }
+ice-transcript = { workspace = true }
+ice-vision = { workspace = true }
+ice-segmentation = { workspace = true }
+ice-concept-graph = { workspace = true }
+ice-checkpoints = { workspace = true }
+ice-exercise-gen = { workspace = true }
+ice-test-gen = { workspace = true }
+ice-evaluation = { workspace = true }
+ice-adaptive = { workspace = true }
+ice-progress = { workspace = true }
+ice-llm = { workspace = true }
+
+# ---- Lint / format / type config (shared across all Python packages) ----
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["eval/golden_set", "data", ".venv", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "TID", "PT"]
+ignore = ["E501"]  # handled by formatter
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # asserts ok in tests
+"**/migrations/**" = ["E", "F"]  # alembic-generated
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+exclude = "migrations/|\\.venv|node_modules"
+namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = ["faster_whisper.*", "pyannote.*", "paddleocr.*", "cv2.*", "scene_detect.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "8.3"
+testpaths = ["tests", "libs", "apps"]
+addopts = "-ra --strict-markers --cov-config=pyproject.toml"
+asyncio_mode = "auto"
+markers = [
+    "integration: requires running services (postgres/redis/minio/judge0)",
+    "e2e: full pipeline flow",
+    "gpu: requires a GPU node",
+    "golden: runs against the 5-video golden set",
+    "slow: long-running",
+]
+
+[tool.coverage.run]
+source = ["libs", "apps"]
+omit = ["*/tests/*", "*/migrations/*", "*/__init__.py"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+show_missing = true
+skip_covered = true

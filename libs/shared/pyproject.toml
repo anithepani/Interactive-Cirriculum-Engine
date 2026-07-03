@@ -1,0 +1,28 @@
+[project]
+name = "ice-shared"
+version = "0.1.0"
+description = "Cross-cutting utilities for ICE: settings, logging, tenant context, Postgres/Redis/S3 clients."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ice-contracts",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.4.0",
+    "structlog>=24.4.0",
+    "sqlalchemy>=2.0.34",
+    "psycopg[binary]>=3.2.1",
+    "pgvector>=0.3.2",
+    "redis>=5.0.8",
+    "boto3>=1.35.0",
+    "tenacity>=9.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ice_shared"]
+
+[tool.uv.sources]
+ice-contracts = { workspace = true }

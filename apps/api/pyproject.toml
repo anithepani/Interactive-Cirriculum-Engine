@@ -1,0 +1,25 @@
+[project]
+name = "ice-api"
+version = "0.1.0"
+description = "M13 Backend API & Database - FastAPI (Python 3.11, async). Auth, sessions, curriculum CRUD, eval. Multi-tenant with row-level isolation. Owner: Zubair."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "ice-shared", "ice-contracts",
+    "fastapi>=0.115.0", "uvicorn[standard]>=0.30.6",
+    "python-jose[cryptography]>=3.3.0", "passlib[bcrypt]>=1.7.4",
+    "python-multipart>=0.0.9", "httpx>=0.27.0", "itsdangerous>=2.2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/ice_api"]
+
+[tool.uv.sources]
+ice-shared = { workspace = true }
+ice-contracts = { workspace = true }
+
+[project.scripts]
+ice-api = "ice_api.main:run"

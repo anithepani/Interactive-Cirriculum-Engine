@@ -1,0 +1,60 @@
+# CODEOWNERS — Interactive Curriculum Engine
+# Each path maps to the GitHub usernames of the owners.
+# libs/contracts requires BOTH Aryan and Zubair (contract seam).
+
+# ---- Contract seam (requires dual sign-off) ----
+/libs/contracts/                        @aryan @zubair
+/docs/contracts/                        @aryan @zubair
+/docs/api/openapi.yaml                  @aryan @zubair
+
+# ---- AI / NLP pipeline (Aryan) ----
+/libs/ai/transcript/                    @aryan
+/libs/ai/segmentation/                  @aryan
+/libs/ai/concept_graph/                 @aryan
+/libs/ai/checkpoints/                   @aryan
+/libs/ai/exercise_gen/                  @aryan
+/libs/ai/test_gen/                      @aryan
+/libs/ai/evaluation/                    @aryan
+/libs/ai/adaptive/                      @aryan
+/libs/ai/llm/                           @aryan
+/libs/ai/progress/                     @aryan @zubair
+/prompt-library/                        @aryan
+/docs/research/nlp/                    @aryan
+/docs/research/question-gen/           @aryan
+/docs/research/code-gen-eval/          @aryan
+/docs/research/adaptive/               @aryan
+/docs/prompts/                          @aryan
+
+# ---- Vision / CV / Hardware (Ahmed) ----
+/libs/ai/vision/                        @ahmed
+/libs/ai/ingestion/                    @zubair @ahmed
+/docs/research/vision/                  @ahmed
+/docs/research/multimodal/             @aryan @ahmed
+
+# ---- Application / Infra / DB (Zubair) ----
+/apps/api/                             @zubair
+/apps/worker/                          @zubair
+/apps/web/                             @zubair
+/db/                                   @zubair
+/infra/                                @zubair
+/.github/                              @zubair
+/Makefile                              @zubair
+/pyproject.toml                        @zubair
+/pnpm-workspace.yaml                   @zubair
+/package.json                          @zubair
+/docs/architecture/                    @zubair
+/docs/adr/                             @zubair
+/docs/data-model/                      @zubair
+/docs/runbooks/                        @zubair
+/docs/onboarding/                      @zubair
+/docs/research/infra/                  @zubair
+
+# ---- Eval suite ----
+/eval/golden_set/                      @aryan @ahmed
+/eval/rubrics/                         @aryan
+/eval/benchmarks/                      @aryan
+/eval/reports/                         @aryan @zubair
+
+# ---- Shared ----
+/libs/shared/                          @zubair @aryan
+/scripts/                              @zubair

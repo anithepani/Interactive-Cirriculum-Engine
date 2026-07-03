@@ -1,0 +1,16 @@
+{
+  "id": "G1",
+  "title": "Python Dictionaries",
+  "source": "youtube:REPLACE_WITH_REAL_ID",
+  "language": "en",
+  "duration_sec_hint": 600,
+  "expected_concepts": [
+    "python.dict.create",
+    "python.dict.get",
+    "python.dict.keys_values_items",
+    "python.dict.update"
+  ],
+  "expected_checkpoint_count_min": 3,
+  "expected_checkpoint_count_max": 7,
+  "notes": "Canonical example from the master plan (§'Example Scenario'). The generated coding challenge must use a NEW context (e.g. product inventory) rather than the instructor's student-names example."
+}

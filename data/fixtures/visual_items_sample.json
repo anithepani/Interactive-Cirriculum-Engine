@@ -1,0 +1,1 @@
+[{"frame_idx": 0, "ts": 5.0, "type": "code", "text": "student = {\"name\": \"Alice\", \"age\": 20}", "bbox": [0.1, 0.2, 0.8, 0.3], "code_lang": "python", "confidence": 0.92}, {"frame_idx": 1, "ts": 8.5, "type": "slide", "text": "Dictionaries: key -> value", "bbox": [0.0, 0.0, 1.0, 0.15], "code_lang": null, "confidence": 0.88}]

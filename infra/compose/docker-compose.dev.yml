@@ -1,0 +1,138 @@
+# ============================================================
+# Interactive Curriculum Engine - dev stack
+# `make dev` boots this. Mirrors the Phase-0 acceptance criteria:
+# every member can run their core model on a sample tutorial.
+# ============================================================
+name: ice
+
+services:
+  # ---- Data layer ----
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ice
+      POSTGRES_PASSWORD: ice_dev_password
+      POSTGRES_DB: ice
+    ports: ["5432:5432"]
+    volumes:
+      - ice_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ice"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    volumes:
+      - ice_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ice_minio
+      MINIO_ROOT_PASSWORD: ice_minio_secret
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # console
+    volumes:
+      - ice_minio:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on: { minio: { condition: service_healthy } }
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ice_minio ice_minio_secret;
+      mc mb -p local/ice-artifacts || true;
+      mc anonymous set download local/ice-artifacts || true;
+      "
+
+  # ---- Code sandbox (M14, MVP) ----
+  judge0:
+    image: judge0/judge0:1.13.0
+    environment:
+      REDIS_URL: redis://redis:6379/3
+    ports: ["2358:2358"]
+    depends_on:
+      redis: { condition: service_healthy }
+
+  # ---- Application services (run locally during Phase 0; containerized later) ----
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.api
+    environment:
+      DATABASE_URL: postgresql+psycopg://ice:ice_dev_password@postgres:5432/ice
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      S3_ENDPOINT: http://minio:9000
+      JUDGE0_URL: http://judge0:2358
+      ENV: dev
+      LOG_LEVEL: INFO
+      CORS_ORIGINS: http://localhost:3000
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    volumes:
+      - ../../:/app    # live reload in dev
+    command: uv run uvicorn ice_api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+    environment:
+      DATABASE_URL: postgresql+psycopg://ice:ice_dev_password@postgres:5432/ice
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      S3_ENDPOINT: http://minio:9000
+      JUDGE0_URL: http://judge0:2358
+      ENV: dev
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+    volumes:
+      - ../../:/app
+
+  # ---- Monitoring ----
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ["9090:9090"]
+    volumes:
+      - ./prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml
+      - ice_prom:/prometheus
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: grafana_dev
+    ports: ["3001:3000"]
+    depends_on: [prometheus]
+    volumes:
+      - ice_grafana:/var/lib/grafana
+
+volumes:
+  ice_pg:
+  ice_redis:
+  ice_minio:
+  ice_prom:
+  ice_grafana:

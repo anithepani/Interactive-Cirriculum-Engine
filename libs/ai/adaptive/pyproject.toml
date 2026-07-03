@@ -1,0 +1,17 @@
+[project]
+name = "ice-adaptive"
+version = "0.1.0"
+description = "M10 Adaptive Progression Controller - IRT 3PL (MVP) -> DKT (stretch). Lead: Aryan; Support: Zubair."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["ice-shared", "ice-contracts"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["src/ice_adaptive"]
+
+[tool.uv.sources]
+ice-shared = { workspace = true }
+ice-contracts = { workspace = true }

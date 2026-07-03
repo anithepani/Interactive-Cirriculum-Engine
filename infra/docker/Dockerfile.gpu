@@ -1,0 +1,24 @@
+# syntax=docker/dockerfile:1.7
+# GPU-enabled image for ASR (Whisper) + OCR (PaddleOCR) + open LLMs.
+# Uses NVIDIA CUDA base. Self-hosted to avoid per-minute API costs (§6.3).
+FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    UV_LINK_MODE=copy
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3-pip python3.11-dev build-essential libpq-dev \
+        ffmpeg libgl1 libglib2.0-0 curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.11 /usr/bin/python
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+COPY pyproject.toml uv.lock* ./
+COPY libs/ ./libs/
+RUN uv sync --no-dev --extra gpu 2>/dev/null || uv sync --no-dev
+
+# GPU smoke check at build time (optional, Phase 1).
+CMD ["uv", "run", "celery", "-A", "ice_worker.celery_app", "worker", "-l", "info", "-Q", "gpu"]

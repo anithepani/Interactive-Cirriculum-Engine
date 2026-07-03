@@ -1,0 +1,191 @@
+openapi: 3.1.0
+info:
+  title: Interactive Curriculum Engine API
+  version: 0.1.0
+  description: |
+    AI platform that converts tutorial videos into interactive, adaptive learning
+    sessions. Multi-tenant with row-level isolation (locked decision #5).
+    Master plan reference: Appendix B (AI Service API Contracts).
+  contact:
+    name: ICE Team
+tags:
+  - name: curriculum
+  - name: evaluation
+  - name: adaptive
+  - name: vision
+  - name: nlp
+  - name: auth
+  - name: meta
+
+servers:
+  - url: http://localhost:8000
+    description: dev
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    # Re-exported from libs/contracts (ice_contracts.export_schemas).
+    # The canonical JSON schemas live in docs/contracts/_exported/.
+    CurriculumGenerateRequest:
+      type: object
+      required: [video_ref, tenant_id]
+      properties:
+        video_ref: { type: string, description: "YouTube URL or uploaded object key" }
+        tenant_id: { type: string, format: uuid }
+    CurriculumGenerateResponse:
+      type: object
+      required: [curriculum_id, status]
+      properties:
+        curriculum_id: { type: string, format: uuid }
+        status: { type: string, example: queued }
+    EvaluateRequest:
+      type: object
+      required: [exercise_id, response]
+      properties:
+        exercise_id: { type: string }
+        response:
+          type: object
+          description: "Type-specific: {option_idx} mcq, {code} coding, {fixed_code, explanation} debug, {text} conceptual"
+    EvalResult:
+      type: object
+      required: [exercise_id, verdict, score, explanation]
+      properties:
+        exercise_id: { type: string }
+        verdict: { type: string, enum: [pass, fail, partial] }
+        score: { type: number, minimum: 0, maximum: 1 }
+        explanation: { type: string }
+        hints: { type: array, items: { type: string } }
+        anti_cheat_flag: { type: boolean }
+
+paths:
+  /health:
+    get:
+      tags: [meta]
+      summary: Liveness probe
+      responses:
+        "200": { description: ok }
+
+  # ---- §5.3.2 AI service endpoints ----
+
+  /ai/curriculum/generate:
+    post:
+      tags: [curriculum]
+      summary: Submit a video for ingestion (async)
+      description: Kicks off the full pipeline; returns curriculum_id immediately.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CurriculumGenerateRequest" }
+      responses:
+        "202":
+          description: Curriculum queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CurriculumGenerateResponse" }
+
+  /ai/curriculum/{id}:
+    get:
+      tags: [curriculum]
+      summary: Fetch the full curriculum JSON
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: Curriculum JSON (segments, concepts, checkpoints, exercises) }
+        "404": { description: Not found / not visible to this tenant (RLS) }
+
+  /ai/evaluate:
+    post:
+      tags: [evaluation]
+      summary: Evaluate a learner response (session-time, <2s p95)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EvaluateRequest" }
+      responses:
+        "200":
+          description: Eval result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvalResult" }
+
+  /ai/regenerate:
+    post:
+      tags: [curriculum]
+      summary: Regenerate a fresh exercise variant (same concept, different context)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [exercise_id]
+              properties:
+                exercise_id: { type: string }
+                constraints: { type: object }
+      responses:
+        "200": { description: A fresh Exercise (same concept) }
+
+  /ai/adaptive/{session_id}:
+    get:
+      tags: [adaptive]
+      summary: Next checkpoint + difficulty recommendation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: AdaptiveState }
+
+  # ---- Internal endpoints (Ahmed/Aryan) ----
+
+  /vision/extract:
+    post:
+      tags: [vision]
+      summary: (Internal) Run OCR + region detection on frames
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [video_ref, tenant_id]
+              properties:
+                video_ref: { type: string }
+                tenant_id: { type: string, format: uuid }
+      responses:
+        "200": { description: VisualItem[] }
+
+  /nlp/segment:
+    post:
+      tags: [nlp]
+      summary: (Internal) Fuse transcript + visuals into segments
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transcript_json]
+              properties:
+                transcript_json: { type: object }
+                visual_items: { type: array }
+                language_hint: { type: string }
+      responses:
+        "200": { description: Segment[] }

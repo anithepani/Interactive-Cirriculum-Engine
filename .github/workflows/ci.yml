@@ -1,0 +1,195 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Detect which paths changed so we only run the relevant jobs.
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      web: ${{ steps.filter.outputs.web }}
+      contracts: ${{ steps.filter.outputs.contracts }}
+      db: ${{ steps.filter.outputs.db }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - 'apps/api/**'
+              - 'apps/worker/**'
+              - 'libs/**'
+              - 'scripts/**'
+              - 'eval/**'
+              - 'pyproject.toml'
+            web:
+              - 'apps/web/**'
+              - 'package.json'
+              - 'pnpm-workspace.yaml'
+            contracts:
+              - 'libs/contracts/**'
+            db:
+              - 'db/**'
+            infra:
+              - 'infra/**'
+              - '.github/workflows/**'
+
+  python-lint-typecheck-test:
+    name: Python (lint + mypy + pytest)
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ice
+          POSTGRES_PASSWORD: ice_test
+          POSTGRES_DB: ice_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U ice"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://ice:ice_test@localhost:5432/ice_test
+      REDIS_URL: redis://localhost:6379/0
+      DB_RLS_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - name: Set up Python
+        run: uv python install 3.11
+      - name: Sync dependencies
+        run: uv sync --all-extras --dev
+      - name: Ruff check
+        run: uv run ruff check .
+      - name: Ruff format check
+        run: uv run ruff format --check .
+      - name: Mypy
+        run: uv run mypy
+      - name: Run unit tests
+        run: uv run pytest -m "not integration and not e2e and not gpu and not golden" --cov
+
+  web-lint-typecheck-test:
+    name: Web (eslint + tsc + vitest)
+    needs: changes
+    if: ${{ needs.changes.outputs.web == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm run lint:web
+      - name: Typecheck
+        run: pnpm run typecheck:web
+      - name: Test
+        run: pnpm run test:web -- --run
+
+  contract-check:
+    name: Contract tests (libs/contracts)
+    needs: changes
+    if: ${{ needs.changes.outputs.contracts == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check both Aryan and Zubair are requested reviewers
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Reminder: contracts require dual sign-off.
+            core.notice('libs/contracts changed — requires approval from BOTH @aryan and @zubair.');
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - name: Run contract tests
+        run: uv run pytest tests/contract/ -v
+      - name: Validate JSON Schema exports
+        run: uv run python -c "import ice_contracts; ice_contracts.export_schemas('docs/contracts/_exported')"
+
+  db-migration-check:
+    name: DB migrations (reversibility + RLS)
+    needs: changes
+    if: ${{ needs.changes.outputs.db == 'true' }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ice
+          POSTGRES_PASSWORD: ice_test
+          POSTGRES_DB: ice_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U ice"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://ice:ice_test@localhost:5432/ice_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --dev
+      - name: Upgrade head
+        run: uv run alembic -c db/alembic.ini upgrade head
+      - name: Verify downgrade (reversibility)
+        run: uv run alembic -c db/alembic.ini downgrade -1
+      - name: Re-upgrade
+        run: uv run alembic -c db/alembic.ini upgrade head
+      - name: Verify every tenant-scoped table has an RLS policy
+        run: uv run python scripts/check_rls.py
+
+  security-scan:
+    name: Secret scan + dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: detect-secrets
+        uses: RobertFischer/detect-secrets-action@master
+      - name: pip-audit (Python deps)
+        if: ${{ needs.changes.outputs.python == 'true' }}
+        run: |
+          pip install pip-audit
+          pip-audit -r <(uv export --no-hashes --format requirements-txt)
+      - name: pnpm audit (Web deps)
+        if: ${{ needs.changes.outputs.web == 'true' }}
+        run: pnpm audit --audit-level high

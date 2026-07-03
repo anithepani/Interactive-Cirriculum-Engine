@@ -1,0 +1,74 @@
+name: Eval Regression (Golden Set)
+
+# Runs the Appendix D rubrics against the 5-video golden test set.
+# Triggered on release tags and on PRs that touch AI packages or prompts,
+# to catch quality drift before it ships.
+
+on:
+  push:
+    tags:
+      - "release/v*"
+  pull_request:
+    branches: [main]
+    paths:
+      - "libs/ai/**"
+      - "prompt-library/**"
+      - "eval/**"
+  workflow_dispatch:
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: false  # never cancel a running eval; it's expensive
+
+jobs:
+  golden-eval:
+    name: Golden-set evaluation
+    runs-on: ubuntu-latest-8-core
+    timeout-minutes: 90
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      DATABASE_URL: postgresql+psycopg://ice:ice_test@localhost:5432/ice_eval
+      REDIS_URL: redis://localhost:6379/0
+      S3_ENDPOINT: http://localhost:9000
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ice
+          POSTGRES_PASSWORD: ice_test
+          POSTGRES_DB: ice_eval
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U ice"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+      minio:
+        image: minio/minio:latest
+        env:
+          MINIO_ROOT_USER: ice_minio
+          MINIO_ROOT_PASSWORD: ice_minio_secret
+        ports: [9000:9000]
+        options: minio server /data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras --dev
+      - name: Apply migrations
+        run: uv run alembic -c db/alembic.ini upgrade head
+      - name: Run golden-set evaluation
+        run: uv run python scripts/eval-golden.py --output eval/reports/golden-$(date +%Y%m%d-%H%M%S).json
+      - name: Compare against baseline + fail on regression
+        run: uv run python scripts/eval-compare.py --baseline eval/reports/baseline.json --latest eval/reports/
+      - name: Upload eval report
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-eval-report
+          path: eval/reports/
+          retention-days: 90

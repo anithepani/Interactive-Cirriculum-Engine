@@ -1,0 +1,80 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+*.egg
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+.uv-cache/
+.uv/
+
+# ---- Node / Next.js / pnpm ----
+node_modules/
+.pnpm-store/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.npm
+.pnp.*
+coverage/
+*.log
+
+# ---- Testing / coverage ----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# ---- Environment & secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- IDE / editors ----
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---- Project artifacts (runtime) ----
+storage/
+minio/
+artifacts/
+data/raw/
+data/processed/
+eval/reports/*.json
+eval/reports/*.html
+!eval/reports/.gitkeep
+
+# ---- Media / large files ----
+*.mp4
+*.mkv
+*.mov
+*.webm
+*.wav
+*.mp3
+!data/samples/.gitkeep
+!data/samples/**/*.md
+
+# ---- Terraform / infra ----
+.terraform/
+*.tfstate
+*.tfstate.*
