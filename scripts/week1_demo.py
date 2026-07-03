@@ -25,6 +25,9 @@ import json
 
 from ice_llm.client import LLMClient
 from ice_transcript.transcribe import transcribe
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def main() -> int:
@@ -48,8 +51,8 @@ def main() -> int:
     segments = result["segments"]
     print(f"\nDetected language: {result['language']} (confidence={result['confidence']:.3f})")
     print(f"Total segments: {len(segments)}")
-    print("\n--- First 3 segments ---")
-    print(json.dumps(segments[:3], indent=2, ensure_ascii=False))
+    print("\n--- First 19 segments ---")
+    print(json.dumps(segments[:19], indent=2, ensure_ascii=False))
 
     context = " ".join(seg["text"] for seg in segments[:3]).strip()
     prompt = (

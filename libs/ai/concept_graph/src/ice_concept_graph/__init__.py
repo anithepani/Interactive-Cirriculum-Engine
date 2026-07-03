@@ -1,20 +1,13 @@
-"""M5 Knowledge Graph / Concept Mapper.
+"""M5 Knowledge Graph / Concept Mapper - concept node + edge extraction.
 
-Input: concepts from M4. Output: concept nodes + prerequisite/dependency edges,
-mapped to a curated CS/programming concept taxonomy.
-
-Tech: LLM-extracted relations; stored as a property graph (Postgres + adjacency,
-optional Neo4j later); link to Wikidata/CS taxonomy for canonical IDs.
-
-Paper [OPT]: Concept-map learning literature; "Open Learner Models".
+Builds a concept graph from M4 segments: deduplicates concepts, enriches them
+with LLM-generated descriptions + difficulty, and extracts prerequisite/related/
+part_of edges via batched LLM calls.
 
 Lead: Aryan. Support: Zubair (storage).
 """
 from __future__ import annotations
 
-from ice_contracts import Concept, Segment
+from ice_concept_graph.extractor import extract_concepts_and_edges
 
-
-def build_concept_graph(segments: list[Segment]) -> tuple[list[Concept], list[tuple[str, str, str]]]:
-    """Return (concept_nodes, [(src_id, dst_id, relation_label), ...])."""
-    raise NotImplementedError("Phase 2 deliverable")
+__all__ = ["extract_concepts_and_edges"]

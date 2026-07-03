@@ -1,0 +1,97 @@
+[
+  {
+    "id": 1,
+    "start": 0.0,
+    "end": 3.04,
+    "title": "Python Classes Basic Concept",
+    "summary": "This segment teaches Python object creation using classes.",
+    "concepts": [
+      "classes",
+      "blueprints",
+      "creating",
+      "objects"
+    ],
+    "structuredness": 1.0,
+    "topic_label": "Python classes are like"
+  },
+  {
+    "id": 2,
+    "start": 3.52,
+    "end": 14.96,
+    "title": "Creating Game Characters Easily",
+    "summary": "This segment teaches creating characters with attributes in a video game using a class.",
+    "concepts": [
+      "say",
+      "want",
+      "create",
+      "characters",
+      "video"
+    ],
+    "structuredness": 0.3652,
+    "topic_label": "Let's say we want"
+  },
+  {
+    "id": 3,
+    "start": 15.22,
+    "end": 23.64,
+    "title": "Python Class Initialization Method",
+    "summary": "This segment teaches the purpose of the dunder init method in Python classes.",
+    "concepts": [
+      "you",
+      "first",
+      "create",
+      "class",
+      "object"
+    ],
+    "structuredness": 0.3965,
+    "topic_label": "When you first create"
+  },
+  {
+    "id": 4,
+    "start": 24.02,
+    "end": 33.32,
+    "title": "Character Stats Configuration Example",
+    "summary": "This segment teaches character stat assignment.",
+    "concepts": [
+      "you",
+      "see",
+      "warrior",
+      "being",
+      "supplied"
+    ],
+    "structuredness": 0.7218,
+    "topic_label": "So you'll see the"
+  },
+  {
+    "id": 5,
+    "start": 33.58,
+    "end": 58.14,
+    "title": "Using Self in Classes",
+    "summary": "This segment teaches using self in Python classes to reference object properties.",
+    "concepts": [
+      "self",
+      "variable",
+      "supplied",
+      "automatically",
+      "always"
+    ],
+    "structuredness": 0.236,
+    "topic_label": "The self variable is"
+  },
+  {
+    "id": 6,
+    "start": 58.14,
+    "end": 84.48,
+    "title": "Object Oriented Programming Basics",
+    "summary": "This segment teaches object attribute modification using methods in object-oriented programming.",
+    "concepts": [
+      "added",
+      "method",
+      "called",
+      "just",
+      "takes"
+    ],
+    "structuredness": 0.1902,
+    "topic_label": "So here, I've added"
+  }
+]
