@@ -45,6 +45,16 @@ def main() -> int:
         default=DEFAULT_FIXTURE,
         help="Path to a JSON file containing a list of M4 segment dicts.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output only the concept graph as valid JSON (no headers).",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="Write JSON to this file (UTF-8). Bypasses shell encoding issues.",
+    )
     args = parser.parse_args()
 
     segments_path = os.path.abspath(args.segments)
@@ -55,10 +65,21 @@ def main() -> int:
     with open(segments_path, encoding="utf-8-sig") as f:
         segments = json.load(f)
 
+    graph = extract_concepts_and_edges(segments)
+
+    json_mode = args.json or args.output is not None
+    if json_mode:
+        out = json.dumps(graph, indent=2, ensure_ascii=False)
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(out)
+            print(f"Wrote {len(graph['concepts'])} concepts + {len(graph['edges'])} edges to {args.output}", file=sys.stderr)
+        else:
+            print(out)
+        return 0
+
     print(f"Loaded {len(segments)} segment(s) from: {segments_path}")
     print()
-
-    graph = extract_concepts_and_edges(segments)
 
     print(f"Concepts ({len(graph['concepts'])}):")
     print(json.dumps(graph["concepts"], indent=2, ensure_ascii=False))

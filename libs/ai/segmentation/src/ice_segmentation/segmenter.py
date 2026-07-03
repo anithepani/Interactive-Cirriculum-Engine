@@ -32,6 +32,7 @@ _EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 _MIN_SENTENCES_PER_SEGMENT = 2
 _SIMILARITY_FLOOR = 0.3  # absolute minimum similarity to NOT split
 _MAX_CONCEPTS = 5
+_MIN_SEGMENT_DURATION_SEC = 15.0  # merge segments shorter than this into prev
 
 # Lazy singletons so the model loads only once per process.
 _embedder: SentenceTransformer | None = None
@@ -115,15 +116,42 @@ def _merge_into_segments(
     return segments
 
 
+def _merge_short_segments(
+    segments: list[dict], sentences: list[dict]
+) -> list[dict]:
+    """Post-processing pass: merge any segment shorter than
+    _MIN_SEGMENT_DURATION_SEC into its predecessor.
+
+    Iterates forward so cascaded merges work correctly (a very short segment
+    that comes right after another short segment will both be absorbed).
+    """
+    if not segments:
+        return segments
+
+    merged: list[dict] = [segments[0]]
+    for seg in segments[1:]:
+        lo, hi = seg["sent_idx_start"], seg["sent_idx_end"]
+        duration = sentences[hi - 1]["end"] - sentences[lo]["start"]
+        if duration < _MIN_SEGMENT_DURATION_SEC:
+            # Absorb into previous segment.
+            merged[-1]["sent_idx_end"] = hi
+            logger.debug(
+                "Merged short segment (%.1fs) into predecessor.", duration
+            )
+        else:
+            merged.append(seg)
+    return merged
+
+
 # ---- BERTopic topic labels (step e) -------------------------------------
 
 
 def _bertopic_labels(texts: list[str]) -> list[str]:
-    """Assign a short topic label to each text. Falls back to first words."""
+    """Assign a short topic label to each text. Falls back to noun extraction."""
     if len(texts) < 15:
         # BERTopic needs enough docs for UMAP spectral embedding to work
-        # (k >= N errors below ~15 docs). Use first-words fallback otherwise.
-        return [_first_words(t) for t in texts]
+        # (k >= N errors below ~15 docs). Use noun-extraction fallback.
+        return [_noun_label(t) for t in texts]
     try:
         from bertopic import BERTopic
 
@@ -146,17 +174,60 @@ def _bertopic_labels(texts: list[str]) -> list[str]:
                     # BERTopic names look like "0_health_character_damage"
                     parts = words_str.split("_", 1)
                     label = parts[1] if len(parts) > 1 else words_str
-                    labels_map[topic_id] = label.replace("_", " ")[:40]
+                    candidate = label.replace("_", " ")[:40]
+                    labels_map[topic_id] = candidate
                 else:
                     labels_map[topic_id] = "general"
-        return [labels_map.get(t, "general") for t in topics]
+        raw_labels = [labels_map.get(t, "general") for t in topics]
+        # Replace any garbage label (mostly stop-words) with noun fallback.
+        return [
+            _noun_label(texts[i]) if _is_garbage_label(lbl) else lbl
+            for i, lbl in enumerate(raw_labels)
+        ]
     except Exception as exc:
-        logger.warning("BERTopic failed (%s); using first-words fallback.", exc)
-        return [_first_words(t) for t in texts]
+        logger.warning("BERTopic failed (%s); using noun fallback.", exc)
+        return [_noun_label(t) for t in texts]
 
 
 def _first_words(text: str, n: int = 4) -> str:
     return " ".join(text.split()[:n])
+
+
+# Stop-words used to detect garbage BERTopic labels.
+_LABEL_STOP_WORDS = {
+    "we", "the", "to", "and", "a", "an", "of", "in", "is", "are",
+    "this", "that", "it", "its", "be", "was", "were", "for", "on",
+    "or", "but", "not", "with", "you", "so", "do", "can", "by",
+    "have", "has", "had", "will", "just", "our", "them",
+}
+
+
+def _noun_label(text: str, n: int = 3) -> str:
+    """Regex fallback: extract the first *n* candidate nouns from *text*.
+
+    A 'noun candidate' is any lower-case token of ≥4 chars that is not a
+    stop-word and is not purely numeric.
+    """
+    tokens = re.findall(r"\b[a-z][a-z0-9_]{3,}\b", text.lower())
+    seen: set[str] = set()
+    nouns: list[str] = []
+    for tok in tokens:
+        if tok in _LABEL_STOP_WORDS or tok in seen:
+            continue
+        seen.add(tok)
+        nouns.append(tok)
+        if len(nouns) >= n:
+            break
+    return " ".join(nouns) if nouns else _first_words(text)
+
+
+def _is_garbage_label(label: str) -> bool:
+    """Return True when *label* is mostly stop-words (BERTopic noise)."""
+    tokens = label.lower().split()
+    if not tokens:
+        return True
+    stop_ratio = sum(1 for t in tokens if t in _LABEL_STOP_WORDS) / len(tokens)
+    return stop_ratio > 0.5
 
 
 # ---- LLM title + summary (step f) ---------------------------------------
@@ -315,6 +386,9 @@ def segment_transcript(transcript_dict: dict) -> list[dict]:
         candidate_segments = [
             {"sent_idx_start": 0, "sent_idx_end": len(sentences)}
         ]
+
+    # (d-post) Merge segments shorter than _MIN_SEGMENT_DURATION_SEC into prev.
+    candidate_segments = _merge_short_segments(candidate_segments, sentences)
 
     # (e) BERTopic topic labels.
     segment_texts = [

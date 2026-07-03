@@ -19,9 +19,14 @@ _STOPWORDS = {
     "the", "a", "an", "is", "are", "to", "in", "of", "and", "or", "for",
     "we", "can", "this", "that", "with", "like", "its", "our", "let",
     "now", "also", "when", "which", "from", "not", "but", "by", "on",
-    "it", "be", "has", "have", "was", "were", "so", "here", "some",
-    "you", "see", "say", "want", "just", "take", "first", "two", "down",
-    "add", "added", "called", "always", "first", "being", "supplied",
+    "it", "be", "has", "have", "had", "do", "does", "did", "was", "were",
+    "so", "here", "some", "you", "see", "say", "want", "just", "take",
+    "first", "two", "down", "add", "added", "called", "always", "being",
+    "supplied",
+    # --- M5 additions (stop-words from task spec) ---
+    "today", "brought", "going", "ever", "would", "these", "those",
+    "will", "could", "should", "may", "might", "must",
+    "been",
 }
 
 _MAX_CONCEPTS = 30
@@ -87,6 +92,8 @@ def _enrich_nodes(concepts: list[str], llm) -> list[dict]:
     """Ask the LLM to generate descriptions + difficulty for all concepts at once."""
     concept_list = "\n".join(f"  {i+1}. {c}" for i, c in enumerate(concepts))
     prompt = (
+        "Extract ONLY core technical/programming concepts. No filler words or "
+        "pronouns.\n\n"
         "For each of the following programming/tutorial concepts, write a short "
         "1-sentence description and assign a difficulty rating from 1 (beginner) "
         "to 5 (advanced). Return a JSON array where each element has fields: "
