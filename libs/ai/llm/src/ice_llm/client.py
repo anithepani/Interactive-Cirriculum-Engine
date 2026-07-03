@@ -10,6 +10,9 @@ import os
 import time
 
 from groq import Groq, RateLimitError
+from dotenv import load_dotenv
+
+load_dotenv()
 
 MODEL = "llama-3.3-70b-versatile"
 MAX_RETRIES = 2

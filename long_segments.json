@@ -1,0 +1,450 @@
+[
+  {
+    "id": 1,
+    "start": 0.0,
+    "end": 22.3,
+    "title": "This video was brought to",
+    "summary": "```json",
+    "concepts": [
+      "video",
+      "brought",
+      "you",
+      "learning",
+      "made"
+    ],
+    "structuredness": 0.3072,
+    "topic_label": "video brought indently"
+  },
+  {
+    "id": 2,
+    "start": 22.64,
+    "end": 54.74,
+    "title": "Creating Python Files And Variables",
+    "summary": "This segment teaches basic Python syntax for creating files and variables.",
+    "concepts": [
+      "example",
+      "want",
+      "create",
+      "main",
+      "script"
+    ],
+    "structuredness": 0.2796,
+    "topic_label": "example want create"
+  },
+  {
+    "id": 3,
+    "start": 55.36000000000001,
+    "end": 92.38,
+    "title": "Using Variables In Programming",
+    "summary": "This segment teaches variable usage in programming to avoid hardcoding values.",
+    "concepts": [
+      "ever",
+      "want",
+      "use",
+      "these",
+      "just"
+    ],
+    "structuredness": 0.2258,
+    "topic_label": "ever want these"
+  },
+  {
+    "id": 4,
+    "start": 92.64,
+    "end": 132.56,
+    "title": "Basic Python Data Types",
+    "summary": "This segment teaches basic Python data types, including integers, floats, strings, booleans, lists, tuples, sets, and dictionaries.",
+    "concepts": [
+      "many",
+      "data",
+      "types",
+      "basic",
+      "integers"
+    ],
+    "structuredness": 0.3117,
+    "topic_label": "python many data"
+  },
+  {
+    "id": 5,
+    "start": 132.84,
+    "end": 150.96,
+    "title": "Introduction To Data Structures",
+    "summary": "This segment teaches about lists and tuples in programming.",
+    "concepts": [
+      "lists",
+      "contain",
+      "arbitrary",
+      "amount",
+      "elements"
+    ],
+    "structuredness": 0.3338,
+    "topic_label": "then lists which"
+  },
+  {
+    "id": 6,
+    "start": 150.96,
+    "end": 217.34,
+    "title": "Python Data Types Overview",
+    "summary": "This segment teaches Python's basic data types and type annotations.",
+    "concepts": [
+      "add",
+      "anything",
+      "remove",
+      "lists",
+      "you"
+    ],
+    "structuredness": 0.1773,
+    "topic_label": "anything remove from"
+  },
+  {
+    "id": 7,
+    "start": 217.6,
+    "end": 266.68,
+    "title": "Importance of Code Warnings",
+    "summary": "This segment teaches the value of type annotations and warnings in preventing coding mistakes.",
+    "concepts": [
+      "your",
+      "code",
+      "gets",
+      "more",
+      "complex"
+    ],
+    "structuredness": 0.2199,
+    "topic_label": "when your code"
+  },
+  {
+    "id": 8,
+    "start": 266.68,
+    "end": 290.38,
+    "title": "Type Annotations Are Traffic",
+    "summary": "This segment teaches that type annotations serve as warnings or guidelines for developers, but do not affect the actual execution of the program.",
+    "concepts": [
+      "using",
+      "type",
+      "annotations",
+      "traffic",
+      "light"
+    ],
+    "structuredness": 0.2472,
+    "topic_label": "using type annotations"
+  },
+  {
+    "id": 9,
+    "start": 290.38,
+    "end": 354.52,
+    "title": "Using Constants In Python",
+    "summary": "This segment teaches how to define and use constants in Python using type annotations and naming conventions.",
+    "concepts": [
+      "annotations",
+      "kind",
+      "same",
+      "thing",
+      "they"
+    ],
+    "structuredness": 0.4177,
+    "topic_label": "annotations kind like"
+  },
+  {
+    "id": 10,
+    "start": 354.52,
+    "end": 379.98,
+    "title": "Creating Constants In Python",
+    "summary": "This segment teaches creating constants in Python to prevent variable overwriting.",
+    "concepts": [
+      "developer",
+      "value",
+      "variable",
+      "should",
+      "overwritten"
+    ],
+    "structuredness": 0.2992,
+    "topic_label": "developer value variable"
+  },
+  {
+    "id": 11,
+    "start": 380.04,
+    "end": 465.06,
+    "title": "Using Functions In Python",
+    "summary": "This segment teaches how to create reusable functions in Python to avoid code duplication and improve maintainability.",
+    "concepts": [
+      "going",
+      "import",
+      "date",
+      "time",
+      "what"
+    ],
+    "structuredness": 0.2527,
+    "topic_label": "going import from"
+  },
+  {
+    "id": 12,
+    "start": 465.06,
+    "end": 517.92,
+    "title": "Functions With Custom Parameters",
+    "summary": "This segment teaches creating reusable functions with customizable parameters.",
+    "concepts": [
+      "type",
+      "current",
+      "date",
+      "remove",
+      "last"
+    ],
+    "structuredness": 0.2657,
+    "topic_label": "type current date"
+  },
+  {
+    "id": 13,
+    "start": 517.92,
+    "end": 551.46,
+    "title": "Functions Return Data Types",
+    "summary": "This segment teaches how functions can return results based on given data types and operations.",
+    "concepts": [
+      "functions",
+      "even",
+      "return",
+      "results",
+      "example"
+    ],
+    "structuredness": 0.4983,
+    "topic_label": "functions even return"
+  },
+  {
+    "id": 14,
+    "start": 551.46,
+    "end": 594.1,
+    "title": "Defining Functions And Classes",
+    "summary": "This segment teaches about function return types and class basics in programming.",
+    "concepts": [
+      "define",
+      "return",
+      "type",
+      "just",
+      "once"
+    ],
+    "structuredness": 0.3045,
+    "topic_label": "define return type"
+  },
+  {
+    "id": 15,
+    "start": 594.1,
+    "end": 625.58,
+    "title": "Defining Classes In Python",
+    "summary": "This segment teaches defining classes and initializers in Python.",
+    "concepts": [
+      "how",
+      "works",
+      "python",
+      "define",
+      "class"
+    ],
+    "structuredness": 0.4183,
+    "topic_label": "works python define"
+  },
+  {
+    "id": 16,
+    "start": 625.58,
+    "end": 649.12,
+    "title": "Defining Car Class Attributes",
+    "summary": "This segment teaches class initializer basics in Python.",
+    "concepts": [
+      "specific",
+      "information",
+      "want",
+      "use",
+      "each"
+    ],
+    "structuredness": 0.3314,
+    "topic_label": "specific information want"
+  },
+  {
+    "id": 17,
+    "start": 650.02,
+    "end": 670.58,
+    "title": "Creating Car Class Instance",
+    "summary": "This segment teaches initializing class instances with attributes using the self keyword.",
+    "concepts": [
+      "these",
+      "values",
+      "instance",
+      "car",
+      "need"
+    ],
+    "structuredness": 0.3154,
+    "topic_label": "these values instance"
+  },
+  {
+    "id": 18,
+    "start": 670.58,
+    "end": 699.62,
+    "title": "Creating Class Instances Easily",
+    "summary": "This segment teaches object instantiation and attribute referencing in programming.",
+    "concepts": [
+      "horsepower",
+      "part",
+      "what",
+      "refer",
+      "instance"
+    ],
+    "structuredness": 0.3865,
+    "topic_label": "horsepower part here"
+  },
+  {
+    "id": 19,
+    "start": 699.62,
+    "end": 738.24,
+    "title": "Classes Simplify Code Duplication",
+    "summary": "This segment teaches how classes can simplify the process of creating objects or code that has to be duplicated.",
+    "concepts": [
+      "run",
+      "will",
+      "get",
+      "information",
+      "back"
+    ],
+    "structuredness": 0.3194,
+    "topic_label": "information back could"
+  },
+  {
+    "id": 20,
+    "start": 738.24,
+    "end": 784.72,
+    "title": "Methods In Object Oriented",
+    "summary": "This segment teaches defining methods inside a class.",
+    "concepts": [
+      "would",
+      "quite",
+      "difficult",
+      "create",
+      "much"
+    ],
+    "structuredness": 0.1973,
+    "topic_label": "would quite difficult"
+  },
+  {
+    "id": 21,
+    "start": 785.34,
+    "end": 842.56,
+    "title": "Using Self in Classes",
+    "summary": "This segment teaches using the self keyword to access class attributes and methods.",
+    "concepts": [
+      "self",
+      "refers",
+      "instance",
+      "class",
+      "volvo"
+    ],
+    "structuredness": 0.3362,
+    "topic_label": "self refers instance"
+  },
+  {
+    "id": 22,
+    "start": 842.56,
+    "end": 869.6,
+    "title": "Object Oriented Programming Explained",
+    "summary": "This segment teaches object-oriented programming concepts using car classes as examples.",
+    "concepts": [
+      "volvo",
+      "driving",
+      "horsepower",
+      "used",
+      "any"
+    ],
+    "structuredness": 0.5267,
+    "topic_label": "volvo driving horsepower"
+  },
+  {
+    "id": 23,
+    "start": 869.6,
+    "end": 918.12,
+    "title": "Defining Method Parameters In",
+    "summary": "This segment teaches defining custom method parameters in a class.",
+    "concepts": [
+      "inside",
+      "class",
+      "you",
+      "define",
+      "your"
+    ],
+    "structuredness": 0.2768,
+    "topic_label": "inside class also"
+  },
+  {
+    "id": 24,
+    "start": 918.12,
+    "end": 948.18,
+    "title": "Dunder Methods For Beginners",
+    "summary": "This segment teaches using Dunder methods to access object information.",
+    "concepts": [
+      "video",
+      "concept",
+      "methods",
+      "still",
+      "going"
+    ],
+    "structuredness": 0.3006,
+    "topic_label": "video concept dunder"
+  },
+  {
+    "id": 25,
+    "start": 948.18,
+    "end": 971.54,
+    "title": "Defining Dunder String Method",
+    "summary": "This segment teaches defining a custom string representation method in Python.",
+    "concepts": [
+      "method",
+      "just",
+      "double",
+      "underscore",
+      "going"
+    ],
+    "structuredness": 0.1217,
+    "topic_label": "method double underscore"
+  },
+  {
+    "id": 26,
+    "start": 971.54,
+    "end": 1011.92,
+    "title": "Dunder Methods In Python",
+    "summary": "This segment teaches using Dunder methods for custom object operations.",
+    "concepts": [
+      "get",
+      "complex",
+      "object",
+      "back",
+      "actually"
+    ],
+    "structuredness": 0.3167,
+    "topic_label": "complex object back"
+  },
+  {
+    "id": 27,
+    "start": 1011.92,
+    "end": 1032.2,
+    "title": "Using Self Type Annotation",
+    "summary": "This segment teaches using self type annotation from the typing module for code completion.",
+    "concepts": [
+      "you",
+      "suggestions",
+      "would",
+      "annotate",
+      "self"
+    ],
+    "structuredness": 0.2913,
+    "topic_label": "suggestions would annotate"
+  },
+  {
+    "id": 28,
+    "start": 1032.2,
+    "end": 1064.6,
+    "title": "Overriding Addition Operator Behavior",
+    "summary": "This segment teaches how to define custom addition behavior using Python's Dunder methods.",
+    "concepts": [
+      "create",
+      "another",
+      "car",
+      "called",
+      "type"
+    ],
+    "structuredness": 0.2215,
+    "topic_label": "create another called"
+  }
+]

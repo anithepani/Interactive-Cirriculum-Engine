@@ -1,0 +1,186 @@
+{
+  "concepts": [
+    {
+      "id": "classes",
+      "label": "classes",
+      "description": "Classes are templates for creating objects that define properties and behaviors.",
+      "difficulty": 3
+    },
+    {
+      "id": "blueprints",
+      "label": "blueprints",
+      "description": "Blueprints are detailed plans or templates used to create or design something, often used in programming or game development.",
+      "difficulty": 4
+    },
+    {
+      "id": "creating",
+      "label": "creating",
+      "description": "Creating refers to the process of making or bringing something into existence, often used in programming to instantiate objects or variables.",
+      "difficulty": 2
+    },
+    {
+      "id": "objects",
+      "label": "objects",
+      "description": "Objects are instances of classes that have their own set of attributes and methods, representing real-world entities or concepts.",
+      "difficulty": 3
+    },
+    {
+      "id": "create",
+      "label": "create",
+      "description": "Create is a verb meaning to bring something into existence or make something new, often used in programming to instantiate objects or variables.",
+      "difficulty": 1
+    },
+    {
+      "id": "characters",
+      "label": "characters",
+      "description": "Characters can refer to either textual symbols or, in a programming context, entities in a game or simulation with their own attributes and behaviors.",
+      "difficulty": 2
+    },
+    {
+      "id": "video",
+      "label": "video",
+      "description": "Video refers to the recording, transmission, or playback of visual content, and in programming, may involve working with video files or streams.",
+      "difficulty": 4
+    },
+    {
+      "id": "class",
+      "label": "class",
+      "description": "A class is a template for creating objects that defines properties and behaviors, serving as a blueprint for objects.",
+      "difficulty": 3
+    },
+    {
+      "id": "object",
+      "label": "object",
+      "description": "An object is an instance of a class, having its own set of attributes and methods, used to represent real-world entities or concepts.",
+      "difficulty": 3
+    },
+    {
+      "id": "warrior",
+      "label": "warrior",
+      "description": "Warrior is a term often used in game development to describe a type of character or class, typically having attributes and behaviors related to combat.",
+      "difficulty": 2
+    },
+    {
+      "id": "self",
+      "label": "self",
+      "description": "Self is a keyword in some programming languages used to refer to the current instance of a class, often used to access its attributes and methods.",
+      "difficulty": 4
+    },
+    {
+      "id": "variable",
+      "label": "variable",
+      "description": "A variable is a named storage location in memory used to hold a value, allowing it to be changed and reused throughout a program.",
+      "difficulty": 1
+    },
+    {
+      "id": "automatically",
+      "label": "automatically",
+      "description": "Automatically refers to the ability of a system or process to perform tasks or operations without manual intervention, often used in programming to describe features like auto-completion or event handling.",
+      "difficulty": 2
+    },
+    {
+      "id": "method",
+      "label": "method",
+      "description": "A method is a block of code that performs a specific task or operation, often associated with an object or class and used to manipulate its state or behavior.",
+      "difficulty": 3
+    },
+    {
+      "id": "takes",
+      "label": "takes",
+      "description": "Takes can refer to the act of a function or method receiving parameters or arguments, which are used to customize its behavior or operation.",
+      "difficulty": 2
+    }
+  ],
+  "edges": [
+    {
+      "src_concept_id": "classes",
+      "dst_concept_id": "objects",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "class",
+      "dst_concept_id": "objects",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "classes",
+      "dst_concept_id": "class",
+      "relation": "related"
+    },
+    {
+      "src_concept_id": "objects",
+      "dst_concept_id": "object",
+      "relation": "related"
+    },
+    {
+      "src_concept_id": "classes",
+      "dst_concept_id": "object",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "blueprints",
+      "dst_concept_id": "classes",
+      "relation": "related"
+    },
+    {
+      "src_concept_id": "creating",
+      "dst_concept_id": "objects",
+      "relation": "prerequisite"
+    },
+    {
+      "src_concept_id": "create",
+      "dst_concept_id": "objects",
+      "relation": "prerequisite"
+    },
+    {
+      "src_concept_id": "classes",
+      "dst_concept_id": "warrior",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "objects",
+      "dst_concept_id": "warrior",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "self",
+      "dst_concept_id": "objects",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "method",
+      "dst_concept_id": "classes",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "method",
+      "dst_concept_id": "objects",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "variable",
+      "dst_concept_id": "objects",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "takes",
+      "dst_concept_id": "method",
+      "relation": "part_of"
+    },
+    {
+      "src_concept_id": "automatically",
+      "dst_concept_id": "classes",
+      "relation": "related"
+    },
+    {
+      "src_concept_id": "characters",
+      "dst_concept_id": "warrior",
+      "relation": "related"
+    },
+    {
+      "src_concept_id": "video",
+      "dst_concept_id": "characters",
+      "relation": "related"
+    }
+  ]
+}
