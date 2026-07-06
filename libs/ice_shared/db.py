@@ -28,8 +28,10 @@ def set_tenant_context(tenant_id: str) -> None:
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     tenant_id = tenant_id_context.get()
     async with async_session() as session:
-        await session.execute(
-            text("SET LOCAL app.tenant_id = :tenant_id"),
-            {"tenant_id": tenant_id},
-        )
+        # Only set tenant context for PostgreSQL (RLS)
+        if engine.dialect.name == "postgresql":
+            await session.execute(
+                text("SET LOCAL app.tenant_id = :tenant_id"),
+                {"tenant_id": tenant_id},
+            )
         yield session
