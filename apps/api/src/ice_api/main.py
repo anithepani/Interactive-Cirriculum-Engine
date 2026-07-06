@@ -1,25 +1,32 @@
-"""FastAPI app factory + middleware wiring."""
 from __future__ import annotations
+
+import sys
+import os
+
+# Add repo root, libs, and src folder to sys.path
+repo_root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
+libs_path = os.path.join(repo_root, "libs")
+src_path = os.path.join(os.path.dirname(__file__), "..")
+
+sys.path.insert(0, repo_root)
+sys.path.insert(0, libs_path)
+sys.path.insert(0, src_path)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from ice_shared import settings
 from ice_shared.logging import configure_logging, get_logger
 
+# Import the router
+from ice_api.routers import curricula
+
+print("✅ curricula router imported successfully")
 
 def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     log = get_logger("ice_api")
 
-    app = FastAPI(
-        title="Interactive Curriculum Engine API",
-        version="0.1.0",
-        description="Convert tutorial videos into interactive, adaptive learning sessions.",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
-    )
+    app = FastAPI()
 
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
     app.add_middleware(
@@ -30,24 +37,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # TenantMiddleware binds tenant_id from JWT -> context var -> RLS (risk E25).
-    # Rate-limit per tenant (risk E18, E21).
-
-    @app.get("/health", tags=["meta"])
-    async def health() -> dict[str, str]:
+    @app.get("/health")
+    async def health():
         return {"status": "ok", "env": settings.env}
 
-    # Routers are registered here as they land in each phase:
-    #   from ice_api.routers import curriculum, sessions, eval, progress, admin
-    #   app.include_router(curriculum.router, prefix="/ai", tags=["curriculum"])
-    #   app.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
-    #   app.include_router(eval.router, prefix="/ai", tags=["evaluation"])
-    #   app.include_router(progress.router, prefix="/progress", tags=["progress"])
-    #   app.include_router(admin.router, prefix="/admin", tags=["instructor"])
+    # Register routers
+    app.include_router(curricula.router)
+    print("✅ curricula router registered")
 
-    log.info("ice_api.create_app", env=settings.env, cors_origins=origins)
+    log.info(f"ice_api.create_app: env={settings.env}, cors_origins={origins}")
     return app
-
 
 app = create_app()
 
