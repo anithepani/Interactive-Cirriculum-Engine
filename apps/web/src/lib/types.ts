@@ -21,6 +21,7 @@ export interface Checkpoint {
   ts: number;
   exercise_type: string;
   difficulty: number;
+  exercise?: ExercisePayload | null;
 }
 
 export interface CurriculumDetail {
@@ -44,21 +45,14 @@ export interface CurriculumSummary {
   ready_at?: string;
   progress?: number;
 }
+
 export interface ExercisePayload {
+  type?: string;
   question?: string;
   options?: string[];
   answer_index?: number;
   reference_answer?: string;
   starter_code?: string;
   solution?: string;
-}
-
-export interface Checkpoint {
-  id: number | string;
-  ts: number;
-  segment_id: number;
-  concept_id: string;
-  exercise_type: string;
-  difficulty: number;
-  exercise?: ExercisePayload | null;   // <-- added
+  language?: string;
 }
