@@ -1,33 +1,32 @@
 from __future__ import annotations
-
 import sys
 import os
 
-# Add repo root, libs, and src folder to sys.path
-repo_root = os.path.join(os.path.dirname(__file__), "..", "..", "..")
-libs_path = os.path.join(repo_root, "libs")
-src_path = os.path.join(os.path.dirname(__file__), "..")
-
-sys.path.insert(0, repo_root)
-sys.path.insert(0, libs_path)
-sys.path.insert(0, src_path)
-
+# Add paths if needed (but we use PYTHONPATH)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from ice_shared import settings
 from ice_shared.logging import configure_logging, get_logger
 
-# Import the router
-from ice_api.routers import curricula
+# Import routers
+from ice_api.routers import curricula, execute
 
-print("✅ curricula router imported successfully")
 
 def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     log = get_logger("ice_api")
 
-    app = FastAPI()
+    app = FastAPI(
+        title="Interactive Curriculum Engine API",
+        version="0.1.0",
+        description="Convert tutorial videos into interactive, adaptive learning sessions.",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+    )
 
+    # CORS
     origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
     app.add_middleware(
         CORSMiddleware,
@@ -37,24 +36,26 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.get("/health")
-    async def health():
+    # Health check
+    @app.get("/health", tags=["meta"])
+    async def health() -> dict[str, str]:
         return {"status": "ok", "env": settings.env}
 
     # Register routers
-    app.include_router(curricula.router)
-    print("✅ curricula router registered")
+    app.include_router(curricula.router)   # POST /api/v1/curricula, GET /api/v1/curricula, etc.
+    app.include_router(execute.router)     # POST /api/v1/execute
 
     log.info(f"ice_api.create_app: env={settings.env}, cors_origins={origins}")
     return app
 
+
+# --- Define app at the top level (required for uvicorn) ---
 app = create_app()
 
 
+# Optional: entry point for running with `python -m ice_api`
 def run() -> None:
-    """Entry point for the `ice-api` console script."""
     import uvicorn
-
     uvicorn.run(
         "ice_api.main:app",
         host="0.0.0.0",
@@ -62,3 +63,7 @@ def run() -> None:
         reload=settings.env == "dev",
         log_level=settings.log_level.lower(),
     )
+
+
+if __name__ == "__main__":
+    run()
