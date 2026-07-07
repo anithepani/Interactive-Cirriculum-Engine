@@ -1,48 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
-import dynamic from "next/dynamic";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { Checkpoint, CurriculumDetail, ExercisePayload } from "@/lib/types";
 import { usePlayerStore } from "@/lib/store";
 import ExerciseModal from "@/components/ExerciseModal";
 import CheckpointMarker from "@/components/CheckpointMarker";
 
-// Dynamic import for plyr-react
-const Plyr = dynamic(
-  () => import("plyr-react").then((mod) => mod.Plyr),
-  { ssr: false }
-);
-
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export default function CurriculumPage() {
   const params = useParams();
   const id = params?.id;
-
-  // Use SWR with a refresh interval (no delay)
   const { data, error, mutate } = useSWR<CurriculumDetail>(
     id ? `/api/v1/curricula/${id}` : null,
     fetcher,
-    { refreshInterval: 5000 } // refresh every 5 seconds
+    { refreshInterval: 5000 }
   );
 
-  const [player, setPlayer] = useState<any>(null);
   const [selectedExercise, setSelectedExercise] = useState<ExercisePayload | null>(null);
   const [selectedCheckpointId, setSelectedCheckpointId] = useState<number | string | null>(null);
-  const plyrRef = useRef<any>(null);
   const { currentCheckpointIndex, setCurrentCheckpointIndex, isExerciseOpen, openExercise, closeExercise } = usePlayerStore();
 
-  // Store plyr instance when ready
-  useEffect(() => {
-    if (plyrRef.current) {
-      setPlayer(plyrRef.current);
-    }
-  }, []);
-
-  // Open exercise modal for a specific checkpoint
   const openExerciseModal = useCallback(
     (checkpoint: Checkpoint, index: number) => {
       setCurrentCheckpointIndex(index);
@@ -59,43 +40,27 @@ export default function CurriculumPage() {
     closeExercise();
   }, [closeExercise]);
 
-  // Auto‑pause at checkpoints
-  useEffect(() => {
-    if (!data || !player || !data.checkpoints) return;
-    const interval = window.setInterval(() => {
-      const t = player?.currentTime ?? 0;
-      const arrived = data.checkpoints.findIndex((cp) => Math.abs(cp.ts - t) < 0.3);
-      if (arrived !== -1 && arrived !== currentCheckpointIndex) {
-        player.pause();
-        openExerciseModal(data.checkpoints[arrived], arrived);
-      }
-    }, 300);
-    return () => window.clearInterval(interval);
-  }, [data, player, currentCheckpointIndex, openExerciseModal]);
-
-  // Loading / error states
   if (error) return <div className="glass p-6">Failed to load curriculum: {(error as Error).message}</div>;
   if (!data) return <div className="glass p-6"><LoadingSpinner /></div>;
 
-  // Waiting for pipeline to finish
   if (data.status === "queued" || data.status === "processing") {
     return (
       <div className="glass p-8 text-center">
         <h2 className="text-2xl font-semibold">Generating curriculum…</h2>
-        <p className="mt-2 text-gray-300">This may take a minute. Refresh to check status.</p>
+        <p className="mt-2 text-gray-300">This may take a minute.</p>
         <div className="mt-6 mx-auto w-20"><LoadingSpinner size={32} /></div>
       </div>
     );
   }
 
-  // Use the actual YouTube video URL (or blank if missing)
-  const videoSrc = data.video_url ?? "https://cdn.plyr.io/static/blank.mp4";
-  const plyrSource = {
-    type: "video" as const,
-    sources: [{ src: videoSrc, provider: "html5" as const }],
+  // Get YouTube embed URL
+  const videoUrl = data.video_url || "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+  const getEmbedUrl = (url: string) => {
+    const match = url.match(/(?:v=|youtu\.be\/)([^&]+)/);
+    return match ? `https://www.youtube.com/embed/${match[1]}?autoplay=1&rel=0` : null;
   };
+  const embedUrl = getEmbedUrl(videoUrl);
 
-  // Safely access checkpoints
   const checkpoints = data.checkpoints ?? [];
 
   return (
@@ -111,12 +76,21 @@ export default function CurriculumPage() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg overflow-hidden">
-          <Plyr
-            ref={plyrRef}
-            source={plyrSource}
-            options={{ controls: ['play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'fullscreen'] }}
-          />
+        <div className="mt-4 rounded-lg overflow-hidden bg-black aspect-video">
+          {embedUrl ? (
+            <iframe
+              src={embedUrl}
+              className="w-full h-full"
+              allowFullScreen
+              allow="autoplay; encrypted-media; picture-in-picture"
+              title="Video player"
+              // If autoplay fails, the user can click the play button inside the iframe
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-400">
+              Video unavailable
+            </div>
+          )}
         </div>
 
         <div className="mt-4 relative h-6 rounded-full bg-white/6">
@@ -130,10 +104,6 @@ export default function CurriculumPage() {
                 label={`@${cp.ts}s`}
                 onClick={() => {
                   setCurrentCheckpointIndex(index);
-                  if (player) {
-                    player.currentTime = cp.ts;
-                    player.play();
-                  }
                   openExerciseModal(cp, index);
                 }}
               />
