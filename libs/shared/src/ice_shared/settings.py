@@ -111,6 +111,24 @@ class Settings(BaseSettings):
     jwt_access_ttl_min: int = 60
     jwt_refresh_ttl_days: int = 7
 
+    # Frontend URL (OAuth redirects, email links)
+    frontend_url: str = "http://localhost:3000"
+
+    # OAuth
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    google_oauth_redirect_uri: str = "http://localhost:8000/api/v1/auth/google/callback"
+    github_oauth_client_id: str = ""
+    github_oauth_client_secret: str = ""
+    github_oauth_redirect_uri: str = "http://localhost:8000/api/v1/auth/github/callback"
+
+    # SMTP (email verification)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    from_email: str = ""
+
     sentry_dsn: str = ""
     prometheus_metrics_port: int = 9090
 
@@ -129,7 +147,11 @@ class Settings(BaseSettings):
 
     @property
     def database_url_resolved(self) -> str:
-        return self.database_url or self.postgres.url
+        if self.database_url:
+            return self.database_url
+        if self.env == "dev":
+            return "sqlite+aiosqlite:///./ice.db"
+        return self.postgres.url
 
 
 @lru_cache
