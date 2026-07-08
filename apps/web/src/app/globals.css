@@ -2,16 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
-:root{
-  --accent: #4F46E5;
+:root {
+  --bg-canvas: #f4f4f4;
+  --ink: #111111;
+  --ink-soft: #4b4b4b;
+  --accent-lime: #c6ff3d;
+  --accent-coral: #ff5f5f;
+  --accent-hotpink: #ff3d8c;
+  --accent-blue: #3d6bff;
+  --accent-orange: #ff8a3d;
+  --accent-purple: #8a3dff;
+  --surface-dark: #0d0d0d;
+  --surface-burgundy: #4a0e1f;
+  --radius-xl: 2rem;
+  --radius-lg: 1.5rem;
+  --radius-md: 1rem;
 }
 
-html, body { height: 100%; }
-body { @apply bg-slate-900 text-white antialiased; }
+html {
+  scroll-behavior: smooth;
+}
 
-.btn-primary { @apply inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500; }
-.btn-secondary { @apply inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-sm font-semibold text-white/80; }
+html,
+body {
+  height: 100%;
+}
 
-.glass { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border: 1px solid rgba(255,255,255,0.04); backdrop-filter: blur(6px); }
+body {
+  @apply bg-canvas font-body text-ink antialiased;
+}
 
-.rounded-3xl { border-radius: 1rem; }
+@layer utilities {
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-safe\:animate-marquee,
+  .motion-safe\:animate-marqueeReverse,
+  .animate-marquee,
+  .animate-marqueeReverse,
+  .animate-floatY {
+    animation: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .motion-safe\:animate-marquee {
+    animation: marquee 30s linear infinite;
+  }
+  .motion-safe\:animate-marqueeReverse {
+    animation: marqueeReverse 40s linear infinite;
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -8,8 +8,9 @@ import { Checkpoint, CurriculumDetail, ExercisePayload } from "@/lib/types";
 import { usePlayerStore } from "@/lib/store";
 import ExerciseModal from "@/components/ExerciseModal";
 import CheckpointMarker from "@/components/CheckpointMarker";
+import { authFetcher, authFetch } from "@/lib/auth";
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = authFetcher;
 
 export default function CurriculumPage() {
   const params = useParams();
@@ -23,6 +24,10 @@ export default function CurriculumPage() {
   const [selectedExercise, setSelectedExercise] = useState<ExercisePayload | null>(null);
   const [selectedCheckpointId, setSelectedCheckpointId] = useState<number | string | null>(null);
   const { currentCheckpointIndex, setCurrentCheckpointIndex, isExerciseOpen, openExercise, closeExercise } = usePlayerStore();
+  const [iframeKey, setIframeKey] = useState(0);
+  const [loadingTimeout, setLoadingTimeout] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const openExerciseModal = useCallback(
     (checkpoint: Checkpoint, index: number) => {
@@ -40,6 +45,27 @@ export default function CurriculumPage() {
     closeExercise();
   }, [closeExercise]);
 
+  useEffect(() => {
+    setLoadingTimeout(false);
+    setPlayerReady(false);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setLoadingTimeout(true);
+    }, 15000);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [iframeKey]);
+
+  const handleIframeLoad = () => {
+    setPlayerReady(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+  };
+
+  const handleRetry = () => {
+    setIframeKey((prev) => prev + 1);
+  };
+
   if (error) return <div className="glass p-6">Failed to load curriculum: {(error as Error).message}</div>;
   if (!data) return <div className="glass p-6"><LoadingSpinner /></div>;
 
@@ -53,14 +79,16 @@ export default function CurriculumPage() {
     );
   }
 
-  // Get YouTube embed URL
   const videoUrl = data.video_url || "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
-  const getEmbedUrl = (url: string) => {
-    const match = url.match(/(?:v=|youtu\.be\/)([^&]+)/);
-    return match ? `https://www.youtube.com/embed/${match[1]}?autoplay=1&rel=0` : null;
-  };
-  const embedUrl = getEmbedUrl(videoUrl);
 
+  const getEmbedUrl = (url: string): string | null => {
+    const match = url.match(/(?:v=|youtu\.be\/|\/embed\/)([^&?\/]+)/);
+    if (!match) return null;
+    const videoId = match[1];
+    return `https://www.youtube.com/embed/${videoId}?rel=0&modestbranding=1`;
+  };
+
+  const embedUrl = getEmbedUrl(videoUrl);
   const checkpoints = data.checkpoints ?? [];
 
   return (
@@ -76,19 +104,45 @@ export default function CurriculumPage() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg overflow-hidden bg-black aspect-video">
+        <div className="mt-4 rounded-lg overflow-hidden bg-black aspect-video relative">
           {embedUrl ? (
-            <iframe
-              src={embedUrl}
-              className="w-full h-full"
-              allowFullScreen
-              allow="autoplay; encrypted-media; picture-in-picture"
-              title="Video player"
-              // If autoplay fails, the user can click the play button inside the iframe
-            />
+            <>
+              <iframe
+                key={iframeKey}
+                src={embedUrl}
+                className="w-full h-full"
+                allowFullScreen
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerPolicy="strict-origin"
+                title="YouTube video player"
+                frameBorder="0"
+                onLoad={handleIframeLoad}
+              />
+              {loadingTimeout && !playerReady && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-4">
+                  <p className="text-white text-sm text-center mb-3">
+                    Video taking too long to load.
+                  </p>
+                  <button
+                    onClick={handleRetry}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-medium transition"
+                  >
+                    🔄 Retry
+                  </button>
+                  <a
+                    href={videoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 text-xs text-gray-400 hover:text-white underline"
+                  >
+                    Watch on YouTube
+                  </a>
+                </div>
+              )}
+            </>
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-400">
-              Video unavailable
+            <div className="flex flex-col items-center justify-center h-full p-4 text-center text-gray-400">
+              <p className="text-sm">Invalid YouTube URL.</p>
             </div>
           )}
         </div>
@@ -119,9 +173,8 @@ export default function CurriculumPage() {
           exercise={selectedExercise}
           onSubmit={async (answer: string) => {
             if (!selectedCheckpointId) return { passed: false };
-            const response = await fetch("/api/v1/evaluate", {
+            const response = await authFetch("/api/v1/curricula/evaluate", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ checkpoint_id: selectedCheckpointId, answer }),
             });
             const payload = await response.json().catch(() => ({}));

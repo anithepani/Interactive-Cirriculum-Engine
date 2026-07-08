@@ -9,10 +9,11 @@ import { usePlayerStore } from "@/lib/store";
 import ExerciseModal from "@/components/ExerciseModal";
 import CheckpointMarker from "@/components/CheckpointMarker";
 import ReactPlayer from "react-player";
+import { authFetcher, authFetch } from "@/lib/auth";
 
 const Player = ReactPlayer as any;
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json());
+const fetcher = authFetcher;
 
 export default function CurriculumPage() {
   const params = useParams();
@@ -152,9 +153,8 @@ export default function CurriculumPage() {
           exercise={selectedExercise}
           onSubmit={async (answer: string) => {
             if (!selectedCheckpointId) return { passed: false };
-            const response = await fetch("/api/v1/evaluate", {
+            const response = await authFetch("/api/v1/curricula/evaluate", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ checkpoint_id: selectedCheckpointId, answer }),
             });
             const payload = await response.json().catch(() => ({}));
