@@ -4,6 +4,10 @@ from __future__ import annotations
 from typing import AsyncIterator
 
 from ice_shared.db import get_session
+from ice_api.auth_utils import get_current_user
+from ice_api.models import User
+
+__all__ = ["get_db", "current_user", "get_current_user"]
 
 
 async def get_db() -> AsyncIterator:
@@ -12,6 +16,6 @@ async def get_db() -> AsyncIterator:
         yield session
 
 
-async def current_user() -> dict:
-    """Resolve the JWT bearer -> user + tenant. TODO Phase 1."""
-    return {"user_id": "todo", "tenant_id": "todo"}
+async def current_user() -> User:
+    """Resolve the JWT bearer token to the authenticated User."""
+    raise NotImplementedError("Use Depends(get_current_user) directly in route handlers")
