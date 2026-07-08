@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-
-from ice_shared import settings
 
 log = logging.getLogger(__name__)
 
@@ -15,7 +14,13 @@ async def send_verification_email(email: str, code: str, name: str) -> bool:
     Send a 6-digit verification code to the user's email.
     Falls back to console logging when SMTP credentials are not configured.
     """
-    if not settings.smtp_user or not settings.smtp_password:
+    smtp_user = os.getenv("SMTP_USER", "")
+    smtp_password = os.getenv("SMTP_PASSWORD", "")
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    from_email = os.getenv("FROM_EMAIL", smtp_user)
+
+    if not smtp_user or not smtp_password:
         log.warning(
             "SMTP not configured — verification code for %s: %s", email, code
         )
@@ -43,16 +48,15 @@ async def send_verification_email(email: str, code: str, name: str) -> bool:
         </html>
         """
 
-        from_addr = settings.from_email or settings.smtp_user
         msg = MIMEMultipart()
-        msg["From"] = from_addr
+        msg["From"] = from_email
         msg["To"] = email
         msg["Subject"] = subject
         msg.attach(MIMEText(html_body, "html"))
 
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
             server.starttls()
-            server.login(settings.smtp_user, settings.smtp_password)
+            server.login(smtp_user, smtp_password)
             server.send_message(msg)
         return True
     except Exception as e:
