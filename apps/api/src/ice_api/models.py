@@ -7,7 +7,14 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ice_shared.db import Base
 import enum
-
+class VerificationCode(Base):
+    __tablename__ = "verification_codes"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), nullable=False, index=True)
+    code = Column(String(6), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    is_used = Column(Boolean, default=False)
 # ---- Enums ----
 class UserRole(str, enum.Enum):
     learner = "learner"
@@ -44,11 +51,20 @@ class User(Base):
     __tablename__ = "users"
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=False)
-    email = Column(String, unique=True, nullable=False)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(255), nullable=False, default="User")
+    password_hash = Column(String(255), nullable=True)
+    oauth_provider = Column(String(50), nullable=True)
+    oauth_id = Column(String(255), nullable=True)
     role = Column(Enum(UserRole), default=UserRole.learner)
-    oauth_provider = Column(String, nullable=True)
+    is_verified = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
-    __table_args__ = (Index("ix_users_tenant", "tenant_id"),)
+    last_login = Column(DateTime, nullable=True)
+    __table_args__ = (
+        UniqueConstraint("oauth_provider", "oauth_id"),
+        Index("ix_users_tenant", "tenant_id"),
+    )
 
 class Curriculum(Base):
     __tablename__ = "curricula"
