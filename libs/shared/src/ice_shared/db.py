@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase
 
 from ice_shared.settings import settings
-from ice_shared.tenant import current_tenant_id
+from ice_shared.tenant import current_tenant_id, set_tenant_context
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -31,6 +31,10 @@ class Base(DeclarativeBase):
 def set_tenant_context(tenant_id: str) -> None:
     """Bind tenant id for the current async context (SQLite / legacy callers)."""
     tenant_id_context.set(tenant_id)
+
+
+class Base(DeclarativeBase):
+    """Declarative base for all ORM models."""
 
 
 def get_engine() -> AsyncEngine:
@@ -89,3 +93,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                     {"tid": legacy_tenant},
                 )
         yield session
+
+
+# Compat alias for callers that import `async_session` (e.g. legacy process.py).
+async_session = get_session_factory()

@@ -9,6 +9,11 @@ dependencies = [
     "ruff>=0.6.0", "tree-sitter>=0.22.0", "tree-sitter-python>=0.21.0",
 ]
 
+[project.optional-dependencies]
+# CodeBLEU anti-cheat metric (E12). The evaluator falls back to a built-in
+# tree-sitter + n-gram CodeBLEU-style metric when this is not installed.
+codebleu = ["codebleu>=0.5.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

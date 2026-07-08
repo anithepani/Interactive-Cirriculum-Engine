@@ -1,0 +1,23 @@
+{
+  "id": "ex_cp_2_coding",
+  "type": "coding",
+  "ts": 15.22,
+  "concept_id": "create",
+  "difficulty": 3,
+  "prompt": "Write a function `count_vowels(s)` that returns the number of vowels (a, e, i, o, u) in the string `s`. The check must be case-insensitive and must NOT count 'y' as a vowel.",
+  "context": null,
+  "confidence": 0.8,
+  "validation_passed": false,
+  "coding": {
+    "starter": "def count_vowels(s):\n    # Your code here\n    pass",
+    "tests_visible": [],
+    "tests_hidden": [],
+    "reference_solution": "def count_vowels(s):\n    vowels = set('aeiou')\n    return sum(1 for c in s.lower() if c in vowels)",
+    "language": "python",
+    "constraints": [
+      "Must be case-insensitive",
+      "Must handle empty strings",
+      "Must not count 'y' as a vowel"
+    ]
+  }
+}

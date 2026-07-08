@@ -1,0 +1,44 @@
+name: exercise_gen-debug
+version: 0.1.0
+model: gpt-4o
+fallback_model: Qwen/Qwen2.5-Coder-32B-Instruct
+tier: code
+temperature: 0.3
+max_tokens: 4096
+few_shot: true
+owner: aryan
+tags: [m7, exercise, debug, python]
+
+inputs:
+  - name: concept
+    type: string
+    description: The concept being tested (e.g. "Python self").
+    required: true
+  - name: concept_description
+    type: string
+    required: true
+  - name: difficulty
+    type: integer
+    description: 1-5 difficulty target.
+    required: true
+  - name: instructor_code
+    type: string
+    description: Code extracted from the instructor's screen (for context - DO NOT reuse verbatim).
+    required: true
+  - name: segment_summary
+    type: string
+    required: true
+
+output_schema:
+  type: object
+  required: [prompt, buggy_code, tests, bug_explanation]
+  properties:
+    prompt: {type: string, description: "Task framing for the learner (find and fix the bug)."}
+    buggy_code: {type: string, description: "Python code containing a subtle bug related to the concept."}
+    tests: {type: array, items: {type: string}, minItems: 1, description: "Hidden tests the fixed code must pass."}
+    bug_explanation: {type: string, description: "Ground-truth explanation of the bug (LLM-grades learner's explanation)."}
+    confidence: {type: number, minimum: 0, maximum: 1}
+
+eval_baseline:
+  agreement: 0.0
+  run_at: 2026-07-08T00:00:00Z

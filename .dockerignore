@@ -1,0 +1,45 @@
+# ---- Node / frontend ----
+node_modules
+apps/web/node_modules
+apps/web/.next
+apps/web/out
+pnpm-lock.yaml
+package-lock.json
+.pnpm-store
+
+# ---- Python venvs / caches ----
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.ruff_cache
+.mypy_cache
+.pytest_cache
+
+# ---- Version control / IDE ----
+.git
+.gitignore
+.github
+.editorconfig
+.pre-commit-config.yaml
+
+# ---- Dev data / logs / artefacts ----
+data/
+eval/
+docs/
+sandbox/
+*.log
+*.wav
+*.mp4
+*.mp3
+ffmpeg.exe
+
+# ---- Secrets / env files ----
+.env
+.env.*
+.secrets.baseline
+
+# ---- Misc ----
+*.db
+*.pdf
+prompt-library/

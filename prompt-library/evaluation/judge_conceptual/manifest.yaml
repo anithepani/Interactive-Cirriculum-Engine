@@ -1,0 +1,44 @@
+name: evaluation-judge_conceptual
+version: 0.1.0
+model: gpt-4o
+fallback_model: Qwen/Qwen2.5-Coder-32B-Instruct
+tier: high_value
+temperature: 0.2
+max_tokens: 1024
+few_shot: false
+owner: aryan
+tags: [m9, evaluation, judge, conceptual, llm-as-judge]
+
+inputs:
+  - name: prompt
+    type: string
+    description: The conceptual question asked.
+    required: true
+  - name: reference_answer
+    type: string
+    description: Ground-truth reference answer.
+    required: true
+  - name: rubric
+    type: string
+    description: Grading rubric items (joined text).
+    required: true
+  - name: learner_answer
+    type: string
+    description: The learner's free-text answer.
+    required: true
+  - name: embedding_similarity
+    type: number
+    description: Embedding cosine similarity of learner vs reference (0.0-1.0).
+    required: true
+
+output_schema:
+  type: object
+  required: [score, explanation, hints]
+  properties:
+    score: {type: number, description: "Conceptual correctness score 0.0-1.0 against the rubric."}
+    explanation: {type: string}
+    hints: {type: array, items: {type: string}}
+
+eval_baseline:
+  agreement: 0.0
+  run_at: 2026-07-08T00:00:00Z

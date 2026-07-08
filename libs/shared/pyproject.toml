@@ -6,16 +6,19 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "ice-contracts",
-    "pydantic>=2.7.0",
+    "pydantic>=2.10.0",
     "pydantic-settings>=2.4.0",
     "structlog>=24.4.0",
     "sqlalchemy>=2.0.34",
     "aiosqlite>=0.20.0",
     "psycopg[binary]>=3.2.1",
+    "asyncpg>=0.29.0",
     "pgvector>=0.3.2",
     "redis>=5.0.8",
     "boto3>=1.35.0",
     "tenacity>=9.0.0",
+    "python-dotenv>=1.0.0",
+    "annotated-types>=0.7.0",
 ]
 
 [build-system]

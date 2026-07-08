@@ -1,0 +1,20 @@
+[
+  {
+    "inputs": {
+      "concept": "functions",
+      "concept_description": "Functions are reusable blocks of code that take inputs and return outputs.",
+      "difficulty": 3,
+      "instructor_code": "def add(a, b):\n    return a + b",
+      "segment_summary": "This segment teaches defining and calling functions with parameters."
+    },
+    "output": {
+      "prompt": "Write a function `is_palindrome(s)` that returns True if the string `s` reads the same forwards and backwards (ignoring case), and False otherwise.",
+      "starter": "def is_palindrome(s):\n    # Your code here\n    pass",
+      "tests_visible": ["assert is_palindrome('racecar') == True", "assert is_palindrome('hello') == False"],
+      "tests_hidden": ["assert is_palindrome('RaceCar') == True", "assert is_palindrome('') == True", "assert is_palindrome('a') == True"],
+      "reference_solution": "def is_palindrome(s):\n    s = s.lower()\n    return s == s[::-1]",
+      "constraints": ["Must handle empty strings", "Must be case-insensitive"],
+      "confidence": 0.85
+    }
+  }
+]

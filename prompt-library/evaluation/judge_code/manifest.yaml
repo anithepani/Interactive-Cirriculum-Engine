@@ -1,0 +1,44 @@
+name: evaluation-judge_code
+version: 0.1.0
+model: gpt-4o
+fallback_model: Qwen/Qwen2.5-Coder-32B-Instruct
+tier: high_value
+temperature: 0.2
+max_tokens: 1024
+few_shot: false
+owner: aryan
+tags: [m9, evaluation, judge, code, llm-as-judge]
+
+inputs:
+  - name: prompt
+    type: string
+    description: The coding exercise prompt the learner was solving.
+    required: true
+  - name: learner_code
+    type: string
+    description: The learner's submitted Python source.
+    required: true
+  - name: tests
+    type: string
+    description: The assert-statement tests (visible + hidden) as joined text.
+    required: true
+  - name: test_pass_ratio
+    type: number
+    description: Fraction of tests the learner code passed (0.0-1.0).
+    required: true
+  - name: ruff_issues
+    type: string
+    description: Static-analysis issues from ruff (or "none").
+    required: true
+
+output_schema:
+  type: object
+  required: [score, explanation, hints]
+  properties:
+    score: {type: number, description: "Partial-credit quality score 0.0-1.0 (style, readability, correctness beyond tests)."}
+    explanation: {type: string, description: "Why the score (shown to learner)."}
+    hints: {type: array, items: {type: string}, description: "Concrete remediation hints for retry."}
+
+eval_baseline:
+  agreement: 0.0
+  run_at: 2026-07-08T00:00:00Z

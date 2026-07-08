@@ -1,9 +1,10 @@
-"""Alembic env: reads DATABASE_URL from ice_shared settings, runs migrations offline + online.
-
-Embeds tenant_id into the session via SET LOCAL app.tenant_id when online so
-Row-Level Security policies apply to data modifications.
-"""
 from __future__ import annotations
+
+import sys
+import os
+
+# Add the src folder of ice_shared to the path.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'libs', 'shared', 'src'))
 
 import os
 from logging.config import fileConfig
@@ -11,14 +12,16 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+# Use the app's settings for the URL (env-driven). Alembic uses a synchronous
+# engine, so derive a sync psycopg URL from the async URL the app uses.
+from ice_shared import settings  # noqa: E402
+
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Use the app's settings for the URL (env-driven).
-from ice_shared import settings  # noqa: E402
-
-config.set_main_option("sqlalchemy.url", settings.database_url_resolved)
+_sync_url = settings.database_url_resolved.replace("+asyncpg", "+psycopg")
+config.set_main_option("sqlalchemy.url", _sync_url)
 
 target_metadata = None  # set to ORM metadata once SQLAlchemy models land (Phase 1)
 

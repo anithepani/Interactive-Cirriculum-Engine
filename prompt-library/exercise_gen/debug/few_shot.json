@@ -1,0 +1,18 @@
+[
+  {
+    "inputs": {
+      "concept": "for loops",
+      "concept_description": "For loops iterate over sequences in Python.",
+      "difficulty": 2,
+      "instructor_code": "for i in range(5):\n    print(i)",
+      "segment_summary": "This segment teaches Python for loops and iteration."
+    },
+    "output": {
+      "prompt": "The following function should return the sum of all numbers in a list, but it has a bug. Find and fix it.",
+      "buggy_code": "def sum_list(numbers):\n    total = 0\n    for n in numbers\n        total += n\n    return total",
+      "tests": ["assert sum_list([1, 2, 3]) == 6", "assert sum_list([]) == 0", "assert sum_list([5]) == 5"],
+      "bug_explanation": "Missing colon after the for loop header (for n in numbers:).",
+      "confidence": 0.85
+    }
+  }
+]
