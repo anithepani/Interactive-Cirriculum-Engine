@@ -11,8 +11,10 @@ export default function CheckpointMarker({ left, onClick, label }: CheckpointMar
     <button
       title={label}
       onClick={onClick}
-      className="absolute top-0 h-4 w-4 -translate-x-1/2 rounded-full bg-indigo-500 shadow-[0_0_0_6px_rgba(79,70,229,0.12)] hover:scale-110 transition-transform"
-      style={{ left: `${left}%` }}
-    />
+      className="absolute top-1/2 left-0 h-9 -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500 px-3 py-1 text-[11px] font-semibold text-white shadow-xl shadow-black/30 transition hover:bg-indigo-400"
+      style={{ left: `${Math.min(100, Math.max(0, left))}%` }}
+    >
+      {label}
+    </button>
   );
 }

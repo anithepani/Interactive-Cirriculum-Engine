@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useThemeMode } from "@/components/ThemeProviders";
 
 export default function Navbar() {
+  const { mode, toggleColorMode } = useThemeMode();
   return (
     <header className="sticky top-0 z-40 w-full border-b border-white/6 bg-black/30 backdrop-blur-sm">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-4">
@@ -16,20 +18,28 @@ export default function Navbar() {
           </div>
         </Link>
 
-        <nav className="flex items-center gap-4">
-          <Link
-            href="/upload"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-white hover:bg-white/5"
+        <div className="flex items-center gap-3">
+          <nav className="hidden items-center gap-4 md:flex">
+            <Link
+              href="/upload"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-white hover:bg-white/5"
+            >
+              Upload
+            </Link>
+            <Link
+              href="/dashboard"
+              className="rounded-lg px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/5"
+            >
+              Dashboard
+            </Link>
+          </nav>
+          <button
+            onClick={toggleColorMode}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-white transition hover:border-indigo-400/60 hover:bg-indigo-500/10"
           >
-            Upload
-          </Link>
-          <Link
-            href="/dashboard"
-            className="rounded-lg px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/5"
-          >
-            Dashboard
-          </Link>
-        </nav>
+            {mode === "light" ? "Dark" : "Light"}
+          </button>
+        </div>
       </div>
     </header>
   );
