@@ -1,0 +1,44 @@
+name: evaluation-judge_debug
+version: 0.1.0
+model: gpt-4o
+fallback_model: Qwen/Qwen2.5-Coder-32B-Instruct
+tier: high_value
+temperature: 0.2
+max_tokens: 1024
+few_shot: false
+owner: aryan
+tags: [m9, evaluation, judge, debug, llm-as-judge]
+
+inputs:
+  - name: prompt
+    type: string
+    description: The debugging exercise prompt.
+    required: true
+  - name: buggy_code
+    type: string
+    description: The original buggy snippet.
+    required: true
+  - name: bug_explanation
+    type: string
+    description: Ground-truth bug explanation.
+    required: true
+  - name: learner_explanation
+    type: string
+    description: The learner's explanation of the bug.
+    required: true
+  - name: test_pass_ratio
+    type: number
+    description: Fraction of tests the learner's corrected code passed.
+    required: true
+
+output_schema:
+  type: object
+  required: [score, explanation, hints]
+  properties:
+    score: {type: number, description: "Explanation correctness score 0.0-1.0."}
+    explanation: {type: string}
+    hints: {type: array, items: {type: string}}
+
+eval_baseline:
+  agreement: 0.0
+  run_at: 2026-07-08T00:00:00Z

@@ -582,6 +582,16 @@ wheels = [
 ]
 
 [[package]]
+name = "codebleu"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "setuptools" },
+    { name = "tree-sitter" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6b/1a/578456e50459113dad489da50163fb764648c9c17cb62475f541bd7780ec/codebleu-0.6.0.tar.gz", hash = "sha256:6d103dc233c11f5f3c76a140b52108da1b2ddceae47183f3834aa7f7a42819b9", size = 1403534, upload-time = "2024-03-01T16:17:22.704Z" }
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1377,8 +1387,14 @@ dependencies = [
     { name = "tree-sitter-python" },
 ]
 
+[package.optional-dependencies]
+codebleu = [
+    { name = "codebleu" },
+]
+
 [package.metadata]
 requires-dist = [
+    { name = "codebleu", marker = "extra == 'codebleu'", specifier = ">=0.5.0" },
     { name = "ice-contracts", editable = "libs/contracts" },
     { name = "ice-llm", editable = "libs/ai/llm" },
     { name = "ice-shared", editable = "libs/shared" },
@@ -1386,6 +1402,7 @@ requires-dist = [
     { name = "tree-sitter", specifier = ">=0.22.0" },
     { name = "tree-sitter-python", specifier = ">=0.21.0" },
 ]
+provides-extras = ["codebleu"]
 
 [[package]]
 name = "ice-exercise-gen"
