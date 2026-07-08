@@ -64,6 +64,9 @@ eval/reports/*.json
 eval/reports/*.html
 !eval/reports/.gitkeep
 
+# Pipeline output artifacts (scripts/run_pipeline.py)
+long_video_*.json
+
 # ---- Media / large files ----
 *.mp4
 *.mkv
