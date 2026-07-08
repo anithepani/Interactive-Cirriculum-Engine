@@ -12,7 +12,8 @@ from sqlalchemy import select, func
 from pydantic import BaseModel
 
 from ice_shared.db import get_session, set_tenant_context
-from ice_api.models import Curriculum, Tenant, Segment, Concept, Checkpoint, Exercise
+from ice_api.auth_utils import get_current_user
+from ice_api.models import Curriculum, Tenant, Segment, Concept, Checkpoint, Exercise, User
 from ice_api.process import process_video
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,12 @@ class EvaluateRequest(BaseModel):
 
 @router.get("/", response_model=List[Dict[str, Any]])
 async def list_curricula(
-    tenant_id: int = 1,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
+    tenant_id = current_user.tenant_id
     set_tenant_context(str(tenant_id))
-    stmt = select(Curriculum).where(Curriculum.tenant_id == str(tenant_id)).order_by(Curriculum.created_at.desc())
+    stmt = select(Curriculum).where(Curriculum.tenant_id == tenant_id).order_by(Curriculum.created_at.desc())
     result = await session.execute(stmt)
     curricula = result.scalars().all()
     return [
@@ -54,14 +56,15 @@ async def list_curricula(
 @router.post("/", response_model=Dict[str, Any])
 async def create_curriculum(
     data: CurriculumCreate,
-    tenant_id: int = 1,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     try:
+        tenant_id = current_user.tenant_id
         set_tenant_context(str(tenant_id))
 
         curriculum = Curriculum(
-            tenant_id=str(tenant_id),
+            tenant_id=tenant_id,
             title=data.title or "Untitled",
             source_ref=data.video_url,
         )
@@ -88,11 +91,11 @@ async def ping():
 @router.post("/evaluate")
 async def evaluate(
     payload: EvaluateRequest,
-    tenant_id: int = 1,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     try:
-        set_tenant_context(str(tenant_id))
+        set_tenant_context(str(current_user.tenant_id))
         stmt = select(Checkpoint).where(Checkpoint.id == payload.checkpoint_id)
         res = await session.execute(stmt)
         cp = res.scalar_one_or_none()
@@ -113,11 +116,11 @@ async def evaluate(
 @router.get("/{curriculum_id}", response_model=Dict[str, Any])
 async def get_curriculum(
     curriculum_id: int,
-    tenant_id: int = 1,
+    current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
     try:
-        set_tenant_context(str(tenant_id))
+        set_tenant_context(str(current_user.tenant_id))
 
         # Fetch curriculum
         stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
