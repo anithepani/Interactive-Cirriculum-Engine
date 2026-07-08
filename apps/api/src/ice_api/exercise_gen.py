@@ -161,11 +161,22 @@ async def generate_exercises_for_curriculum(curriculum_id: int):
             prompt_text = exercise_payload.get("question") or exercise_payload.get("prompt", "")
             # For MCQ we might have answer_index, for conceptual reference_answer. For coding, use 'solution' if available.
             if "solution" in exercise_payload:
-                answer_text = exercise_payload.get("solution")
+                answer_raw = exercise_payload.get("solution")
+                # Convert to string – if it's a dict, JSONify it
+                if isinstance(answer_raw, dict):
+                    answer_text = json.dumps(answer_raw)
+                elif isinstance(answer_raw, list):
+                    answer_text = json.dumps(answer_raw)
+                else:
+                    answer_text = str(answer_raw) if answer_raw is not None else ""
             elif "answer_index" in exercise_payload:
                 answer_text = str(exercise_payload.get("answer_index", ""))
             else:
                 answer_text = exercise_payload.get("reference_answer", "")
+                if isinstance(answer_text, dict):
+                    answer_text = json.dumps(answer_text)
+                else:
+                    answer_text = str(answer_text) if answer_text is not None else ""
 
             # Insert exercise into database – record as coding
             await session.execute(
