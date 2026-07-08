@@ -1,0 +1,22 @@
+<!-- TODO: Replace with actual assets  hero-illustration.png -->
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600" viewBox="0 0 800 600" fill="none">
+  <rect width="800" height="600" fill="#F8F7FF"/>
+  <rect x="80" y="60" width="640" height="380" rx="24" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="2"/>
+  <rect x="80" y="60" width="640" height="48" rx="24" fill="#4F46E5" fill-opacity="0.08"/>
+  <circle cx="108" cy="84" r="8" fill="#EF4444"/>
+  <circle cx="132" cy="84" r="8" fill="#F59E0B"/>
+  <circle cx="156" cy="84" r="8" fill="#10B981"/>
+  <rect x="120" y="140" width="520" height="260" rx="12" fill="#1A1A2E" fill-opacity="0.06"/>
+  <polygon points="380,220 380,320 460,270" fill="#4F46E5"/>
+  <rect x="120" y="420" width="160" height="12" rx="6" fill="#4F46E5" fill-opacity="0.3"/>
+  <rect x="120" y="444" width="280" height="8" rx="4" fill="#94A3B8" fill-opacity="0.4"/>
+  <rect x="480" y="420" width="160" height="80" rx="12" fill="#7C3AED" fill-opacity="0.12" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="560" y="468" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#7C3AED" font-weight="600">Checkpoint</text>
+  <rect x="600" y="480" width="120" height="80" rx="40" fill="url(#grad)" fill-opacity="0.15"/>
+  <defs>
+    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4F46E5"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+</svg>

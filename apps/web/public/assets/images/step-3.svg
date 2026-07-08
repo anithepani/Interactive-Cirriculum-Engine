@@ -1,0 +1,8 @@
+<!-- TODO: Replace with actual assets  step-3.png -->
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="160" viewBox="0 0 400 160" fill="none">
+  <rect width="400" height="160" fill="#ECFDF5"/>
+  <circle cx="200" cy="70" r="40" fill="none" stroke="#10B981" stroke-width="6" stroke-dasharray="188 251"/>
+  <text x="200" y="76" text-anchor="middle" font-family="sans-serif" font-size="18" fill="#10B981" font-weight="700">85%</text>
+  <rect x="120" y="120" width="160" height="8" rx="4" fill="#10B981" fill-opacity="0.3"/>
+  <rect x="120" y="120" width="136" height="8" rx="4" fill="#10B981"/>
+</svg>

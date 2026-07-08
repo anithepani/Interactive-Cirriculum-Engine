@@ -1,0 +1,6 @@
+<!-- TODO: Replace with actual assets  testimonial-avatar-2.png -->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <circle cx="24" cy="24" r="24" fill="#F5F3FF"/>
+  <circle cx="24" cy="18" r="8" fill="#7C3AED" fill-opacity="0.6"/>
+  <ellipse cx="24" cy="38" rx="12" ry="8" fill="#7C3AED" fill-opacity="0.4"/>
+</svg>
