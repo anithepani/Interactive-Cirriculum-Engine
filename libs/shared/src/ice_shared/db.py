@@ -1,8 +1,8 @@
 """Async SQLAlchemy 2.0 engine + session factory with RLS support."""
 from __future__ import annotations
 
-from typing import AsyncIterator
-from uuid import UUID
+import contextvars
+from typing import AsyncGenerator, AsyncIterator
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.orm import DeclarativeBase
 
 from ice_shared.settings import settings
 from ice_shared.tenant import current_tenant_id
@@ -17,15 +18,34 @@ from ice_shared.tenant import current_tenant_id
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
+# Legacy string-based tenant context (used by curricula + auth routers)
+tenant_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "tenant_id_str", default=None
+)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+def set_tenant_context(tenant_id: str) -> None:
+    """Bind tenant id for the current async context (SQLite / legacy callers)."""
+    tenant_id_context.set(tenant_id)
+
 
 def get_engine() -> AsyncEngine:
     global _engine
     if _engine is None:
+        url = settings.database_url_resolved
+        connect_args = {}
+        if url.startswith("sqlite"):
+            connect_args["check_same_thread"] = False
         _engine = create_async_engine(
-            settings.database_url_resolved,
+            url,
             pool_pre_ping=True,
-            pool_size=10,
-            max_overflow=20,
+            pool_size=10 if not url.startswith("sqlite") else 5,
+            max_overflow=20 if not url.startswith("sqlite") else 0,
+            connect_args=connect_args,
         )
     return _engine
 
@@ -39,15 +59,33 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
+# Alias used by background tasks (process.py, exercise_gen.py)
+class _AsyncSessionMaker:
+    """Lazy proxy so async_session() works like the legacy sessionmaker."""
+
+    def __call__(self):
+        return get_session_factory()()
+
+
+async_session = _AsyncSessionMaker()
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """FastAPI dependency: yields a session with RLS tenant set."""
+    """FastAPI dependency: yields a session with optional RLS tenant set."""
     factory = get_session_factory()
     async with factory() as session:
-        if settings.db_rls_enabled:
+        engine = get_engine()
+        if settings.db_rls_enabled and engine.dialect.name == "postgresql":
             tenant_id = current_tenant_id()
             if tenant_id is not None:
                 await session.execute(
                     __import__("sqlalchemy").text("SET LOCAL app.tenant_id = :tid"),
                     {"tid": str(tenant_id)},
+                )
+            legacy_tenant = tenant_id_context.get()
+            if legacy_tenant is not None:
+                await session.execute(
+                    __import__("sqlalchemy").text("SET LOCAL app.tenant_id = :tid"),
+                    {"tid": legacy_tenant},
                 )
         yield session

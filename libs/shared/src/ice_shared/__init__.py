@@ -3,7 +3,7 @@
 from ice_shared.settings import settings
 from ice_shared.logging import get_logger, bind_context
 from ice_shared.tenant import TenantContext, current_tenant_id
-from ice_shared.db import get_engine, get_session_factory
+from ice_shared.db import Base, get_engine, get_session, get_session_factory, set_tenant_context, async_session
 from ice_shared.redis_client import get_redis
 from ice_shared.s3 import get_s3_client, tenant_prefix
 
@@ -13,8 +13,12 @@ __all__ = [
     "bind_context",
     "TenantContext",
     "current_tenant_id",
+    "Base",
     "get_engine",
+    "get_session",
     "get_session_factory",
+    "set_tenant_context",
+    "async_session",
     "get_redis",
     "get_s3_client",
     "tenant_prefix",
