@@ -10,7 +10,7 @@ from ice_shared import settings
 from ice_shared.logging import configure_logging, get_logger
 
 # Import routers
-from ice_api.routers import curricula, execute
+from ice_api.routers import auth, curricula, execute
 
 
 def create_app() -> FastAPI:
@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
         return {"status": "ok", "env": settings.env}
 
     # Register routers
+    app.include_router(auth.router)        # POST /api/v1/auth/signup, login, verify, etc.
     app.include_router(curricula.router)   # POST /api/v1/curricula, GET /api/v1/curricula, etc.
     app.include_router(execute.router)     # POST /api/v1/execute
 
