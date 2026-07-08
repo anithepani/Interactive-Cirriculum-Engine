@@ -1,30 +1,31 @@
 """M8 Test Generation & Validation.
 
-Input: coding challenge prompt + reference solution. Output: validated test
-cases (visible + hidden) + verified solvability.
+Input: a coding exercise (with ``reference_solution`` + optional ``starter``).
+Output: validated visible + hidden test cases + verified solvability.
 
-Tech: LLM generates N candidate tests + reference solution; mutation testing
-to ensure tests catch bugs; CodeT self-consistency (generate multiple
-solutions, keep tests passing on majority); execute in sandbox before publish.
+Tech: LLM generates candidate tests; CodeT self-consistency (Chen 2022) generates
+multiple reference solutions and keeps tests passing on the majority; mutation
+testing injects common bugs (off-by-one, missing edge cases, wrong operator) and
+verifies the tests catch them; pre-validation runs in a local subprocess sandbox
+(pluggable for judge0). Retries up to 3 times on validation failure.
 
 Papers [MUST]: "CodeT: Code Generation with Generated Tests" (Chen 2022).
 Papers [OPT]: "Self-Debugging" (Chen 2023).
 
-Edge case E14 (AI generates unsolvable challenge): validate every challenge by
-solving with a solver LLM + executing tests before exposing; if no solution
-passes, regenerate.
-Edge case E15 (AI-generated tests wrong): mutation testing on tests;
-cross-validate vs reference solution; dedupe equivalent tests.
+Edge case E14 (AI generates unsolvable challenge): every challenge is validated
+by running tests against the reference solution + CodeT consensus before publish.
+Edge case E15 (AI-generated tests wrong): mutation testing on tests; cross-
+validate vs multiple reference solutions; reject tests that fail on the reference.
 
-Acceptance (Phase 3): exercises only become publishable once validation_passed=True.
+Acceptance (Phase 3): exercises only become publishable once
+``validation_passed=True``.
 
 Lead: Aryan. Support: Zubair (sandbox).
 """
+
 from __future__ import annotations
 
-from ice_contracts import Exercise
+from ice_test_gen.generator import generate_tests
 
-
-def validate_exercise(exercise: Exercise) -> Exercise:
-    """Run mutation testing + sandbox execution; return exercise with validation_passed set."""
-    raise NotImplementedError("Phase 3 deliverable")
+__all__ = ["generate_tests"]
+__version__ = "0.1.0"

@@ -1,0 +1,22 @@
+[
+  {
+    "inputs": {
+      "prompt": "Write a function `is_even(n)` that returns True if n is even, else False.",
+      "reference_solution": "def is_even(n):\n    return n % 2 == 0",
+      "starter": "def is_even(n):\n    # Your code here\n    pass",
+      "constraints": "- Must handle negative integers\n- Must handle zero",
+      "difficulty": 1
+    },
+    "output": {
+      "tests_visible": [
+        "assert is_even(2) == True",
+        "assert is_even(3) == False"
+      ],
+      "tests_hidden": [
+        "assert is_even(0) == True",
+        "assert is_even(-1) == False",
+        "assert is_even(-4) == True"
+      ]
+    }
+  }
+]
