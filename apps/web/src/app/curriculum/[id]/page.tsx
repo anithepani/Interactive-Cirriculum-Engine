@@ -149,7 +149,7 @@ export default function CurriculumPage() {
           exercise={selectedExercise}
           onSubmit={async (answer: string) => {
             if (!selectedCheckpointId) return { passed: false };
-            const response = await fetch("/api/v1/evaluate", {
+            const response = await fetch("/api/v1/curricula/evaluate", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ checkpoint_id: selectedCheckpointId, answer }),

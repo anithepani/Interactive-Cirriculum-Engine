@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import AsyncIterator
 
-from ice_shared.db import get_session
+from ice_shared import get_session
 
 
 async def get_db() -> AsyncIterator:

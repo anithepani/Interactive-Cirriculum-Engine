@@ -61,13 +61,16 @@ services:
       "
 
   # ---- Code sandbox (M14, MVP) ----
-  judge0:
-    image: judge0/judge0:1.13.0
-    environment:
-      REDIS_URL: redis://redis:6379/3
-    ports: ["2358:2358"]
-    depends_on:
-      redis: { condition: service_healthy }
+  # NOTE: judge0 1.13 requires its own Postgres + a judge0-workers container.
+  # No application code calls judge0 yet (ice_evaluation is a stub). Commented
+  # out for bootable-first; re-add with workers+db when wiring M9.
+  # judge0:
+  #   image: judge0/judge0:1.13.0
+  #   environment:
+  #     REDIS_URL: redis://redis:6379/3
+  #   ports: ["2358:2358"]
+  #   depends_on:
+  #     redis: { condition: service_healthy }
 
   # ---- Application services (run locally during Phase 0; containerized later) ----
   api:
@@ -75,7 +78,7 @@ services:
       context: ../..
       dockerfile: infra/docker/Dockerfile.api
     environment:
-      DATABASE_URL: postgresql+psycopg://ice:ice_dev_password@postgres:5432/ice
+      DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -84,6 +87,7 @@ services:
       ENV: dev
       LOG_LEVEL: INFO
       CORS_ORIGINS: http://localhost:3000
+      UV_PROJECT_ENVIRONMENT: /opt/ice-venv
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -91,14 +95,14 @@ services:
       minio-init: { condition: service_completed_successfully }
     volumes:
       - ../../:/app    # live reload in dev
-    command: uv run uvicorn ice_api.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uv run --package ice-api uvicorn ice_api.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.worker
     environment:
-      DATABASE_URL: postgresql+psycopg://ice:ice_dev_password@postgres:5432/ice
+      DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -106,12 +110,31 @@ services:
       JUDGE0_URL: http://judge0:2358
       ENV: dev
       LOG_LEVEL: INFO
+      UV_PROJECT_ENVIRONMENT: /opt/ice-venv
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
     volumes:
       - ../../:/app
+    command: uv run --package ice-worker celery -A ice_worker.celery_app worker -l info
+
+  # ---- Frontend (M12) ----
+  # Dev mode: plain node image, install deps + run `next dev` with hot reload.
+  # The production Dockerfile.web (standalone build) is used for prod/staging.
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      API_URL: http://api:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports: ["3000:3000"]
+    depends_on:
+      api: { condition: service_started }
+    volumes:
+      - ../../:/app
+      - ice_web_node_modules:/app/node_modules
+    command: sh -c "corepack enable && pnpm install && pnpm dev:web"
 
   # ---- Monitoring ----
   prometheus:
@@ -136,3 +159,4 @@ volumes:
   ice_minio:
   ice_prom:
   ice_grafana:
+  ice_web_node_modules:

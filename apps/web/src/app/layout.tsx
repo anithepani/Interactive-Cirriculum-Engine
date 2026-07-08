@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "@babel/generator"  // Make sure the file is named globals.css
+import "./globals.css";
 import Navbar from "@/components/Navbar";
 
 export const metadata: Metadata = {

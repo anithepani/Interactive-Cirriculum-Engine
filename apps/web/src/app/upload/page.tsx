@@ -15,7 +15,7 @@ export default function UploadPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/v1/curricula", {
+      const res = await fetch("/api/v1/curricula/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ video_url: videoUrl, title: "Uploaded curriculum" }),

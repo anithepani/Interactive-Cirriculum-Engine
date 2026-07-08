@@ -7,7 +7,7 @@ import { CurriculumSummary } from "@/lib/types";
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
 export default function DashboardPage() {
-  const { data, error, isLoading } = useSWR<CurriculumSummary[]>("/api/v1/curricula", fetcher, {
+  const { data, error, isLoading } = useSWR<CurriculumSummary[]>("/api/v1/curricula/", fetcher, {
     refreshInterval: 10000,
   });
 

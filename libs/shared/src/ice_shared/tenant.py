@@ -17,6 +17,11 @@ def current_tenant_id() -> UUID | None:
     return _current_tenant.get()
 
 
+def set_tenant_context(tenant_id: UUID | str) -> None:
+    """Bind the current tenant (non-contextmanager convenience for request/task entry)."""
+    _current_tenant.set(UUID(str(tenant_id)))
+
+
 @contextmanager
 def TenantContext(tenant_id: UUID) -> Iterator[UUID]:
     """Bind a tenant for the duration of a request or Celery task."""
