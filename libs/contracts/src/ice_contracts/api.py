@@ -4,6 +4,7 @@ Aryan owns these endpoints' AI semantics; Zubair consumes them. The OpenAPI 3.1
 spec in docs/api/openapi.yaml is the canonical HTTP description; these Pydantic
 models are the in-code shapes both sides import.
 """
+
 from __future__ import annotations
 
 from typing import Optional
@@ -71,9 +72,9 @@ class RegenerateRequest(BaseModel):
     )
 
 
-class RegenerateResponse(Exercise):
-    """A fresh exercise variant (same concept, different context)."""
-
+# class RegenerateResponse(Exercise):
+#   """A fresh exercise variant (same concept, different context)."""
+# pass
 
 # ---- GET /ai/adaptive/{session_id} ----
 

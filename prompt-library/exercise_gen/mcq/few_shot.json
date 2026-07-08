@@ -1,0 +1,17 @@
+[
+  {
+    "inputs": {
+      "concept": "lists",
+      "concept_description": "Lists are ordered, mutable sequences in Python.",
+      "difficulty": 2,
+      "segment_summary": "This segment teaches list indexing and slicing."
+    },
+    "output": {
+      "prompt": "Given the list `nums = [10, 20, 30, 40, 50]`, what does `nums[1:3]` return?",
+      "options": ["[10, 20]", "[20, 30]", "[20, 30, 40]", "[10, 20, 30]"],
+      "answer_idx": 1,
+      "distractor_tags": ["off-by-one start index", "correct", "inclusive end misconception", "off-by-one both"],
+      "confidence": 0.9
+    }
+  }
+]

@@ -1433,6 +1433,7 @@ dependencies = [
     { name = "ice-shared" },
     { name = "openai" },
     { name = "python-dotenv" },
+    { name = "sniffio" },
     { name = "tiktoken" },
 ]
 
@@ -1443,6 +1444,7 @@ requires-dist = [
     { name = "ice-shared", editable = "libs/shared" },
     { name = "openai", specifier = ">=1.40.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
+    { name = "sniffio", specifier = ">=1.3.1" },
     { name = "tiktoken", specifier = ">=0.7.0" },
 ]
 

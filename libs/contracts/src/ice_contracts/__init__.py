@@ -31,7 +31,6 @@ from ice_contracts.api import (
     EvaluateResponse,
     NlpSegmentRequest,
     RegenerateRequest,
-    RegenerateResponse,
     VisionExtractRequest,
     VisionExtractResponse,
 )

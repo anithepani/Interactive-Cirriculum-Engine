@@ -1,0 +1,17 @@
+[
+  {
+    "inputs": {
+      "concept": "variables",
+      "concept_description": "Variables are named storage locations in memory used to hold values.",
+      "difficulty": 1,
+      "segment_summary": "This segment teaches Python variable assignment and naming."
+    },
+    "output": {
+      "prompt": "Explain the difference between a variable's name and its value. Use an example to illustrate.",
+      "reference_answer": "A variable's name is a label that refers to a location in memory, while its value is the data stored at that location. For example, in `age = 25`, 'age' is the name and 25 is the value. The name stays the same even if the value changes (e.g. `age = 26` reassigns the value).",
+      "rubric": ["Distinguishes name from value", "Provides a concrete example", "Mentions that values can change while names persist"],
+      "min_similarity": 0.7,
+      "confidence": 0.9
+    }
+  }
+]
