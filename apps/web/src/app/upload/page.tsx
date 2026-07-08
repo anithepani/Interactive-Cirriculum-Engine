@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import { authFetch } from "@/lib/auth";
 
 export default function UploadPage() {
   const [videoUrl, setVideoUrl] = useState("");
@@ -18,9 +19,8 @@ export default function UploadPage() {
     setSuccess(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/v1/curricula", {
+      const res = await authFetch("/api/v1/curricula", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ video_url: videoUrl, title: "Uploaded curriculum" }),
       });
       if (!res.ok) throw new Error(await res.text());
