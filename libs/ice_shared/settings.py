@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from pydantic_settings import BaseSettings
 from pydantic import Field
-
+ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440   # 24 hours
+REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+JWT_SECRET_KEY: str = "your-secret-key"
+JWT_ALGORITHM: str = "HS256"
 
 class CelerySettings(BaseSettings):
     broker_url: str = "redis://localhost:6379/0"
