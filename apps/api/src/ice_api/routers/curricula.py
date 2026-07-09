@@ -72,8 +72,8 @@ async def create_curriculum(
         await session.commit()
         await session.refresh(curriculum)
 
-        # Run processing in background
-        asyncio.create_task(process_video(curriculum.id, tenant_id))
+        # Run processing in background (dispatches the Celery task).
+        asyncio.create_task(process_video(curriculum.id, data.video_url, tenant_id))
 
         return {"curriculum_id": curriculum.id, "status": "queued"}
 

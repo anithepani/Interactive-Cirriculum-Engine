@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from celery import Celery
-
 from ice_shared import settings
 
 celery_app = Celery(
@@ -32,12 +31,7 @@ celery_app.conf.update(
 
 # Auto-discover task modules:
 celery_app.autodiscover_tasks([
-    "ice_worker.tasks.ingest",
-    "ice_worker.tasks.transcribe",
-    "ice_worker.tasks.vision",
-    "ice_worker.tasks.segment",
-    "ice_worker.tasks.generate",
-    "ice_worker.tasks.validate",
+    "ice_worker.tasks.generate_curriculum",
 ])
 
 

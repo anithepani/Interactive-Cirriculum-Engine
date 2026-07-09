@@ -11,17 +11,33 @@ import os
 from faster_whisper import WhisperModel
 
 DEFAULT_MODEL = os.environ.get("ASR_MODEL", "large-v3")
+DEFAULT_DEVICE = os.environ.get("ASR_DEVICE", "cuda")
+DEFAULT_COMPUTE_TYPE = os.environ.get("ASR_COMPUTE_TYPE", "int8_float16")
 SPEAKER_LABEL = "SPEAKER_00"  # single-speaker assumed until pyannote lands (M2)
 
 
 def _load_model() -> WhisperModel:
-    """Try CUDA (float16) first; fall back silently to CPU (int8)."""
+    """Load faster-whisper honoring ASR_DEVICE/ASR_COMPUTE_TYPE env vars.
+
+    CPU path: go straight to CPU (int8) without attempting CUDA -- avoids the
+    slow load+raise cycle on CPU-only laptops. CUDA path: try float16 first,
+    degrade silently to CPU int8 if CUDA/drivers are unavailable.
+    """
+    device = os.environ.get("ASR_DEVICE", DEFAULT_DEVICE).strip().lower()
+    compute_type = os.environ.get("ASR_COMPUTE_TYPE", DEFAULT_COMPUTE_TYPE).strip().lower()
+    model_name = os.environ.get("ASR_MODEL", DEFAULT_MODEL).strip()
+
+    if device != "cuda":
+        # CPU-first: never attempt CUDA (team laptops have no GPU).
+        ct = compute_type if compute_type in {"int8", "int8_float16"} else "int8"
+        return WhisperModel(model_name, device="cpu", compute_type=ct)
+
     try:
-        return WhisperModel(DEFAULT_MODEL, device="cuda", compute_type="float16")
+        return WhisperModel(model_name, device="cuda", compute_type="float16")
     except Exception:
         # CUDA unavailable, drivers missing, or CTranslate2 built without GPU
         # support. Degrade silently to CPU per the master plan fallback strategy.
-        return WhisperModel(DEFAULT_MODEL, device="cpu", compute_type="int8")
+        return WhisperModel(model_name, device="cpu", compute_type="int8")
 
 
 def transcribe(audio_file_path: str) -> dict:

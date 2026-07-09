@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "ice-shared", "ice-contracts",
     "celery>=5.4.0", "flower>=2.0.1",
+    "ice-api",
     "ice-ingestion", "ice-transcript", "ice-vision", "ice-segmentation",
     "ice-concept-graph", "ice-checkpoints", "ice-exercise-gen",
     "ice-test-gen", "ice-evaluation", "ice-adaptive", "ice-progress", "ice-llm",
@@ -21,6 +22,7 @@ packages = ["src/ice_worker"]
 [tool.uv.sources]
 ice-shared = { workspace = true }
 ice-contracts = { workspace = true }
+ice-api = { workspace = true }
 ice-ingestion = { workspace = true }
 ice-transcript = { workspace = true }
 ice-vision = { workspace = true }
@@ -35,4 +37,4 @@ ice-progress = { workspace = true }
 ice-llm = { workspace = true }
 
 [project.scripts]
-ice-worker = "ice_worker.main:run"
+ice-worker = "ice_worker.celery_app:run"
