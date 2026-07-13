@@ -14,7 +14,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL = "llama-3.3-70b-versatile"
+from ice_shared.settings import settings  # noqa: E402
+
+MODEL = settings.groq_model or "llama-3.3-70b-versatile"
 MAX_RETRIES = 2
 RETRY_SLEEP_SEC = 5
 
@@ -23,7 +25,7 @@ class LLMClient:
     """Thin client around the Groq SDK for the locked Phase-0 model."""
 
     def __init__(self) -> None:
-        api_key = os.environ.get("GROQ_API_KEY")
+        api_key = (settings.groq_api_key or os.environ.get("GROQ_API_KEY", "")).strip()
         if not api_key:
             raise RuntimeError(
                 "GROQ_API_KEY is not set in the environment. "

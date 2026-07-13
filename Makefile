@@ -72,7 +72,7 @@ migrate-new: ## Create a new migration: make migrate-new m="message"
 	$(UV) run alembic -c db/alembic.ini revision --autogenerate -m "$(m)"
 
 seed: ## Seed dev database with sample data
-	$(UV) run python scripts/seed-db.py
+	$(UV) run python scripts/seed_dev.py
 
 eval: ## Run the golden-set evaluation suite
 	$(UV) run python scripts/eval-golden.py

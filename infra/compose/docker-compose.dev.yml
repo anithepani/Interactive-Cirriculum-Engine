@@ -77,6 +77,8 @@ services:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.api
+    env_file:
+      - ../../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
       REDIS_URL: redis://redis:6379/0
@@ -88,6 +90,13 @@ services:
       LOG_LEVEL: INFO
       CORS_ORIGINS: http://localhost:3000
       UV_PROJECT_ENVIRONMENT: /opt/ice-venv
+      UV_CACHE_DIR: /opt/uv-cache
+      HF_HOME: /opt/hf-cache
+      # AI / ASR (CPU-first dev)
+      ASR_MODEL: ${ASR_MODEL:-tiny}
+      ASR_DEVICE: ${ASR_DEVICE:-cpu}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8}
+      PIPELINE_RUN_TESTS: ${PIPELINE_RUN_TESTS:-false}
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -95,12 +104,17 @@ services:
       minio-init: { condition: service_completed_successfully }
     volumes:
       - ../../:/app    # live reload in dev
+      - ice_api_venv:/opt/ice-venv
+      - ice_uv_cache:/opt/uv-cache
+      - ice_hf_cache:/opt/hf-cache
     command: uv run --package ice-api uvicorn ice_api.main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
     build:
       context: ../..
       dockerfile: infra/docker/Dockerfile.worker
+    env_file:
+     - ../../.env 
     environment:
       DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
       REDIS_URL: redis://redis:6379/0
@@ -111,12 +125,22 @@ services:
       ENV: dev
       LOG_LEVEL: INFO
       UV_PROJECT_ENVIRONMENT: /opt/ice-venv
+      UV_CACHE_DIR: /opt/uv-cache
+      HF_HOME: /opt/hf-cache
+      # AI / ASR (CPU-first dev) + LLM key for the worker process
+      ASR_MODEL: ${ASR_MODEL:-tiny}
+      ASR_DEVICE: ${ASR_DEVICE:-cpu}
+      ASR_COMPUTE_TYPE: ${ASR_COMPUTE_TYPE:-int8}
+      PIPELINE_RUN_TESTS: ${PIPELINE_RUN_TESTS:-false}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
     volumes:
       - ../../:/app
+      - ice_worker_venv:/opt/ice-venv
+      - ice_uv_cache:/opt/uv-cache
+      - ice_hf_cache:/opt/hf-cache
     command: uv run --package ice-worker celery -A ice_worker.celery_app worker -l info
 
   # ---- Frontend (M12) ----
@@ -160,3 +184,7 @@ volumes:
   ice_prom:
   ice_grafana:
   ice_web_node_modules:
+  ice_uv_cache:
+  ice_hf_cache:
+  ice_api_venv:
+  ice_worker_venv:

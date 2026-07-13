@@ -38,6 +38,8 @@ from ice_transcript import transcribe
 load_dotenv()
 
 MIN_GAP_SEC_DEFAULT = 90.0
+MIN_START_SEC_DEFAULT = 0.0  # demos: place from t=0; production worker uses 60
+AVOID_FINAL_SEC_DEFAULT = 30.0  # matches production
 
 
 def _load_or_run(path: Path, force: bool, run_fn, label: str):
@@ -92,11 +94,11 @@ def _step_graph(segments: list, out: Path, force: bool) -> dict:
     )
 
 
-def _step_checkpoints(segments: list, graph: dict, out: Path, force: bool, min_gap: float) -> list:
+def _step_checkpoints(segments: list, graph: dict, out: Path, force: bool, min_gap: float, min_start: float, avoid_final: float) -> list:
     return _load_or_run(
         out,
         force,
-        lambda: place_checkpoints(segments, graph, min_gap_sec=min_gap),
+        lambda: place_checkpoints(segments, graph, min_gap_sec=min_gap, min_start_sec=min_start, avoid_final_sec=avoid_final),
         "M6 place_checkpoints",
     )
 
@@ -222,6 +224,18 @@ def main() -> int:
         default=MIN_GAP_SEC_DEFAULT,
         help=f"Min seconds between checkpoints (default: {MIN_GAP_SEC_DEFAULT}).",
     )
+    parser.add_argument(
+        "--min-start-sec",
+        type=float,
+        default=MIN_START_SEC_DEFAULT,
+        help=f"Min seconds before the first checkpoint (default: {MIN_START_SEC_DEFAULT}; production worker uses 60).",
+    )
+    parser.add_argument(
+        "--avoid-final-sec",
+        type=float,
+        default=AVOID_FINAL_SEC_DEFAULT,
+        help=f"Avoid placing checkpoints in the final N seconds, except the final segment (default: {AVOID_FINAL_SEC_DEFAULT}).",
+    )
     args = parser.parse_args()
 
     video = Path(args.video).resolve()
@@ -255,7 +269,7 @@ def main() -> int:
         segments = _step_segments(transcript, f_segments, args.force)
         graph = _step_graph(segments, f_graph, args.force)
         checkpoints = _step_checkpoints(
-            segments, graph, f_checkpoints, args.force, args.min_gap_sec
+            segments, graph, f_checkpoints, args.force, args.min_gap_sec, args.min_start_sec, args.avoid_final_sec
         )
         exercises = _step_exercises(checkpoints, segments, graph, f_exercises, args.force)
 

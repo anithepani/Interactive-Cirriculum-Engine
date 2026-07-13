@@ -185,8 +185,8 @@ async def google_callback(code: str, session: AsyncSession = Depends(get_session
             user.last_login = datetime.utcnow()
             await session.commit()
 
-        access_token = create_access_token({"sub": user.id})
-        refresh_token = create_refresh_token({"sub": user.id})
+        access_token = create_access_token({"sub": str(user.id)})
+        refresh_token = create_refresh_token({"sub": str(user.id)})
         return _token_redirect(access_token, refresh_token)
 
 
@@ -260,8 +260,8 @@ async def github_callback(code: str, session: AsyncSession = Depends(get_session
             user.last_login = datetime.utcnow()
             await session.commit()
 
-        access_token = create_access_token({"sub": user.id})
-        refresh_token = create_refresh_token({"sub": user.id})
+        access_token = create_access_token({"sub": str(user.id)})
+        refresh_token = create_refresh_token({"sub": str(user.id)})
         return _token_redirect(access_token, refresh_token)
 
 
@@ -318,8 +318,8 @@ async def verify_account(
     user.last_login = datetime.utcnow()
     await session.commit()
 
-    access_token = create_access_token({"sub": user.id})
-    refresh_token = create_refresh_token({"sub": user.id})
+    access_token = create_access_token({"sub": str(user.id)})
+    refresh_token = create_refresh_token({"sub": str(user.id)})
 
     return TokenResponse(
         access_token=access_token,
@@ -349,8 +349,8 @@ async def login(data: LoginRequest, session: AsyncSession = Depends(get_session)
     user.last_login = datetime.utcnow()
     await session.commit()
 
-    access_token = create_access_token({"sub": user.id})
-    refresh_token = create_refresh_token({"sub": user.id})
+    access_token = create_access_token({"sub": str(user.id)})
+    refresh_token = create_refresh_token({"sub": str(user.id)})
 
     return TokenResponse(
         access_token=access_token,
@@ -415,5 +415,5 @@ async def refresh_token(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    access_token = create_access_token({"sub": user.id})
+    access_token = create_access_token({"sub": str(user.id)})
     return {"access_token": access_token}

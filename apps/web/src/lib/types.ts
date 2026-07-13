@@ -49,10 +49,14 @@ export interface CurriculumSummary {
 export interface ExercisePayload {
   type?: string;
   question?: string;
+  prompt?: string;
   options?: string[];
   answer_index?: number;
+  answer_idx?: number;
   reference_answer?: string;
   starter_code?: string;
+  starter?: string;
   solution?: string;
   language?: string;
+  min_similarity?: number;
 }

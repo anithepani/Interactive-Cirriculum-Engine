@@ -43,7 +43,7 @@ export default function RootLayout({
       lang="en"
       className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrainsMono.variable}`}
     >
-      <body className="min-h-screen bg-canvas font-body text-ink antialiased">
+      <body className="min-h-screen bg-canvas font-body text-ink antialiased" suppressHydrationWarning>
         <ThemeProviders>
           <div className="flex min-h-screen flex-col bg-canvas">
             <Navbar />

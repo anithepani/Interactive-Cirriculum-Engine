@@ -1,19 +1,16 @@
-from dotenv import load_dotenv
-import os
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
 from __future__ import annotations
-import sys
+
 import os
 
-# Add paths if needed (but we use PYTHONPATH)
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
 from ice_shared import settings
 from ice_shared.logging import configure_logging, get_logger
 
-# Import routers
 from ice_api.routers import auth, curricula, execute
+
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".env"))
 
 
 def create_app() -> FastAPI:
@@ -21,6 +18,7 @@ def create_app() -> FastAPI:
     log = get_logger("ice_api")
 
     app = FastAPI(
+        redirect_slashes=False,
         title="Interactive Curriculum Engine API",
         version="0.1.0",
         description="Convert tutorial videos into interactive, adaptive learning sessions.",

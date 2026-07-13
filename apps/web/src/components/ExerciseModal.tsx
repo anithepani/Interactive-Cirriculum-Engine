@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
 import { ExercisePayload } from "@/lib/types";
 
@@ -14,22 +14,60 @@ interface ExerciseModalProps {
   onClose: () => void;
   exercise: ExercisePayload;
   onSubmit?: (answer: string) => Promise<{ passed: boolean; message?: string }>;
+  completedStatus?: "correct" | "incorrect" | null;
 }
 
-export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit }: ExerciseModalProps) {
+const AUTO_CLOSE_DELAY_MS = 1500;
+
+export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, completedStatus }: ExerciseModalProps) {
   const [answer, setAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<{ passed: boolean; message?: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [execOutput, setExecOutput] = useState<string | null>(null);
+  const autoCloseTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const alreadyAnswered = Boolean(completedStatus);
+  // The learner may close the modal only once they've answered (submitted) OR
+  // are re-opening an already-attempted checkpoint. Auto-paused checkpoints
+  // cannot be dismissed without answering, forcing active recall.
+  const canClose = submitted || alreadyAnswered;
 
   useEffect(() => {
     if (!isOpen) return;
-    setAnswer(exercise.type === "coding" && exercise.starter_code ? exercise.starter_code : "");
-    setSubmitted(false);
-    setResult(null);
+    const starter = exercise.starter_code || exercise.starter;
+    setAnswer(exercise.type === "coding" && starter ? starter : "");
+    setSubmitted(alreadyAnswered);
+    setResult(
+      alreadyAnswered
+        ? { passed: completedStatus === "correct", message: completedStatus === "correct" ? "Already answered correctly." : "Already attempted." }
+        : null
+    );
     setExecOutput(null);
-  }, [exercise, isOpen]);
+    return () => {
+      if (autoCloseTimer.current) {
+        clearTimeout(autoCloseTimer.current);
+        autoCloseTimer.current = null;
+      }
+    };
+  }, [exercise, isOpen, completedStatus, alreadyAnswered]);
+
+  // Auto-close 1-2s after a CORRECT submission so the learner sees the
+  // confirmation but isn't forced to click. Wrong answers never auto-close.
+  useEffect(() => {
+    if (submitted && result?.passed && !alreadyAnswered) {
+      autoCloseTimer.current = setTimeout(() => {
+        onClose();
+      }, AUTO_CLOSE_DELAY_MS);
+      return () => {
+        if (autoCloseTimer.current) {
+          clearTimeout(autoCloseTimer.current);
+          autoCloseTimer.current = null;
+        }
+      };
+    }
+    return undefined;
+  }, [submitted, result, alreadyAnswered, onClose]);
 
   if (!isOpen) return null;
 
@@ -77,8 +115,8 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit }: E
     }
 
     try {
-      const result = await onSubmit(answer);
-      setResult(result);
+      const res = await onSubmit(answer);
+      setResult(res);
     } catch (error) {
       setResult({ passed: false, message: (error as Error).message || "Evaluation failed" });
     } finally {
@@ -89,31 +127,60 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit }: E
 
   const renderQuestion = () => {
     if (!exercise) return null;
-    if (exercise.question) return <p className="text-white text-lg mb-4">{exercise.question}</p>;
+    const text = exercise.question || exercise.prompt;
+    if (text) return <p className="text-white text-lg mb-4 whitespace-pre-wrap">{text}</p>;
     return null;
   };
 
   const renderAnswerArea = () => {
     if (exercise.options && exercise.options.length > 0) {
+      const correctIdx =
+        exercise.answer_idx ?? exercise.answer_index ?? -1;
+      const correctOpt =
+        correctIdx >= 0 && correctIdx < exercise.options.length
+          ? exercise.options[correctIdx]
+          : null;
+
       return (
         <div className="space-y-3">
-          {exercise.options.map((opt, idx) => (
-            <label
-              key={idx}
-              className="flex cursor-pointer items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-200 transition hover:border-indigo-500/40"
-            >
-              <input
-                type="radio"
-                name="mcq"
-                value={opt}
-                checked={answer === opt}
-                onChange={() => setAnswer(opt)}
-                disabled={submitted}
-                className="h-4 w-4 accent-indigo-500"
-              />
-              <span>{opt}</span>
-            </label>
-          ))}
+          {exercise.options.map((opt, idx) => {
+            const isCorrectOpt = opt === correctOpt;
+            const isChosenOpt = answer === opt;
+            // After submission, color-code each option.
+            let stateClasses = "border-white/10 bg-slate-900/80 hover:border-indigo-500/40";
+            if (submitted) {
+              if (isCorrectOpt) {
+                stateClasses = "border-green-500 bg-green-500/15 text-green-200";
+              } else if (isChosenOpt) {
+                stateClasses = "border-red-500 bg-red-500/15 text-red-200";
+              } else {
+                stateClasses = "border-white/10 bg-slate-900/80 opacity-60";
+              }
+            }
+            return (
+              <label
+                key={idx}
+                className={`flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-slate-200 transition ${stateClasses} ${submitted ? "cursor-default" : ""}`}
+              >
+                <input
+                  type="radio"
+                  name="mcq"
+                  value={opt}
+                  checked={answer === opt}
+                  onChange={() => setAnswer(opt)}
+                  disabled={submitted}
+                  className="h-4 w-4 accent-indigo-500"
+                />
+                <span>{opt}</span>
+                {submitted && isCorrectOpt && (
+                  <span className="ml-auto text-green-300 text-sm font-semibold">Correct</span>
+                )}
+                {submitted && isChosenOpt && !isCorrectOpt && (
+                  <span className="ml-auto text-red-300 text-sm font-semibold">Your answer</span>
+                )}
+              </label>
+            );
+          })}
         </div>
       );
     }
@@ -138,18 +205,22 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit }: E
           theme="vs-dark"
           value={answer}
           onChange={(value) => setAnswer(value || "")}
-          options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: "on" }}
+          options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: "on", readOnly: submitted }}
         />
       </div>
     );
   };
+
+  const showAutoCloseHint = submitted && result?.passed && !alreadyAnswered;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-2xl rounded-2xl bg-gray-900 p-6 border border-white/10 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-semibold text-white">Exercise</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-white">✕</button>
+          {canClose && (
+            <button onClick={onClose} className="text-gray-400 hover:text-white" aria-label="Close">✕</button>
+          )}
         </div>
 
         {renderQuestion()}
@@ -163,16 +234,21 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit }: E
             {execOutput !== null && (
               <pre className="bg-gray-800 text-sm p-3 rounded-md overflow-auto mt-2 text-white">{execOutput}</pre>
             )}
+            {showAutoCloseHint && (
+              <div className="text-xs text-green-300/80 mt-1">Closing automatically…</div>
+            )}
           </div>
         )}
 
         <div className="flex justify-end gap-3 mt-4">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white transition"
-          >
-            {submitted ? 'Close' : 'Skip'}
-          </button>
+          {canClose && (
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white transition"
+            >
+              Close
+            </button>
+          )}
           {!submitted && (
             <button
               onClick={handleSubmit}

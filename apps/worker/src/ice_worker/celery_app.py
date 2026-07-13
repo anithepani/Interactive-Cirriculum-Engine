@@ -1,9 +1,19 @@
 """Celery application + broker/result backend configuration."""
 from __future__ import annotations
 
-from celery import Celery
+import os
 
-from ice_shared import settings
+from dotenv import load_dotenv
+
+# Explicitly load the repo-root .env before importing settings, so the worker
+# picks up GROQ_API_KEY / DATABASE_URL etc. regardless of the launch CWD
+# (mirrors apps/api/main.py's intent). Compose's env_file already injects these
+# into the container env; this is the fallback for bare `uv run celery` dev.
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".."))
+load_dotenv(os.path.join(_ROOT, ".env"))
+
+from celery import Celery  # noqa: E402
+from ice_shared import settings  # noqa: E402
 
 celery_app = Celery(
     "ice",
@@ -32,12 +42,7 @@ celery_app.conf.update(
 
 # Auto-discover task modules:
 celery_app.autodiscover_tasks([
-    "ice_worker.tasks.ingest",
-    "ice_worker.tasks.transcribe",
-    "ice_worker.tasks.vision",
-    "ice_worker.tasks.segment",
-    "ice_worker.tasks.generate",
-    "ice_worker.tasks.validate",
+    "ice_worker.tasks.generate_curriculum",
 ])
 
 

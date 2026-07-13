@@ -88,7 +88,9 @@ class _Pipeline(BaseSettings):
     min_video_duration_sec: int = 30
     chunk_window_sec: int = 300
     checkpoint_min_gap_sec: int = 90
+    checkpoint_min_start_sec: int = 60  # no checkpoints before this (s)
     checkpoint_avoid_final_sec: int = 30
+    run_tests: bool = False  # gate M8 test generation (CPU dev: off by default)
 
 
 class Settings(BaseSettings):
@@ -128,6 +130,10 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     from_email: str = ""
+
+    # LLM providers (Groq is the primary Phase-0 path; OpenAI/OpenRouter are fallback)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
 
     sentry_dsn: str = ""
     prometheus_metrics_port: int = 9090

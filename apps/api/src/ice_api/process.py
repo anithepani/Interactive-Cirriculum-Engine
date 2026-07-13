@@ -1,51 +1,62 @@
-"""Video ingestion + processing pipeline entrypoint.
+"""Video ingestion + processing pipeline dispatch (API side).
 
-Phase-1 stub: flips the curriculum status to ``processing`` then ``ready``
-without running the real AI pipeline. The real pipeline (calling
-ice_ingestion -> ice_transcript -> ice_segmentation -> ice_concept_graph ->
-ice_checkpoints via the Celery worker) lands in Phase 2-3.
-
-The previous inline implementation (faster-whisper + raw SQL against renamed
-columns) was removed because it bypassed the AI libs and used a divergent
-schema.
+Dispatches the real AI pipeline to the Celery worker via ``send_task`` (decoupled
+-- the API process never imports ice_worker, keeping yt-dlp / Celery / the AI
+libs out of the API). The task ``ice_worker.tasks.generate_curriculum.generate_curriculum``
+runs the full M1->M8 sequence and persists results; the API returns immediately
+with the curriculum row already in ``queued`` status.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from uuid import UUID
+from typing import Any
 
-from ice_shared import get_session_factory, set_tenant_context
-from ice_api.models import Curriculum
+from celery import Celery
+from ice_shared import settings
 
 logger = logging.getLogger(__name__)
 
+# Send-only Celery instance: just enough to enqueue a task on the broker.
+# Importing ice_worker here would drag the entire AI stack into the API process.
+_send_celery: Celery | None = None
 
-async def process_video(curriculum_id: str, tenant_id: str) -> None:
-    """Stub: mark the curriculum ready without running the AI pipeline.
+
+def _get_sender() -> Celery:
+    global _send_celery
+    if _send_celery is None:
+        _send_celery = Celery(
+            "ice",
+            broker=settings.celery.broker_url,
+            backend=settings.celery.result_backend,
+        )
+        _send_celery.conf.update(
+            task_serializer="json",
+            result_serializer="json",
+            accept_content=["json"],
+        )
+    return _send_celery
+
+
+async def process_video(
+    curriculum_id: Any, video_ref: str, tenant_id: Any
+) -> None:
+    """Dispatch curriculum generation to the Celery worker.
 
     Args:
-        curriculum_id: str UUID of the curriculum row.
-        tenant_id: str UUID of the owning tenant (for RLS).
+        curriculum_id: id of the freshly-created Curriculum row.
+        video_ref: the YouTube URL (or file ref) to process.
+        tenant_id: owning tenant id (for RLS + S3 scoping).
     """
-    set_tenant_context(tenant_id)
-    factory = get_session_factory()
-    async with factory() as session:
-        curriculum = await session.get(Curriculum, UUID(curriculum_id))
-        if not curriculum:
-            logger.error(f"process_video: curriculum {curriculum_id} not found")
-            return
-
-        curriculum.status = "processing"
-        await session.commit()
-
-        # TODO(Phase 2-3): wire the real async pipeline:
-        #   ice_ingestion.ingest_video -> ice_transcript.transcribe ->
-        #   ice_segmentation.segment_transcript -> ice_concept_graph ->
-        #   ice_checkpoints.place_checkpoints -> ice_exercise_gen ->
-        #   persist via ORM.
-        # For now, just mark ready so the frontend can render the (empty) shell.
-        curriculum.status = "ready"
-        curriculum.completed_at = datetime.now(timezone.utc)
-        await session.commit()
-        logger.info(f"process_video: curriculum {curriculum_id} marked ready (stub)")
+    try:
+        _get_sender().send_task(
+            "ice_worker.tasks.generate_curriculum.generate_curriculum",
+            args=[str(curriculum_id), str(video_ref), str(tenant_id)],
+        )
+        logger.info(
+            "dispatched generate_curriculum: cid=%s video=%s tenant=%s",
+            curriculum_id, video_ref, tenant_id,
+        )
+    except Exception:
+        # Broker down etc. The curriculum stays in `queued`; the frontend will
+        # show it never progressed. Surface the error but don't crash the request.
+        logger.exception("failed to dispatch generate_curriculum task")

@@ -42,6 +42,55 @@ _SYSTEM = (
 
 _VALID_TYPES = ("mcq", "coding", "debug", "conceptual")
 
+# Safety-net technicality probe (mirrors M6's placer heuristic). Used to
+# remap coding/debug exercises to mcq/conceptual when a checkpoint's concept
+# is non-technical (e.g. a motivational speech). M6 already filters at the
+# source; this guards against stale or externally-produced checkpoints.
+_TECH_KEYWORDS = (
+    "python", "javascript", "typescript", "java", "c++", "c#",
+    "code", "coding", "programming", "programmer", "function", "method",
+    "variable", "class", "object", "oop", "inheritance", "polymorphism",
+    "array", "linked list", "hashmap", "dictionary", "tuple", "recursion",
+    "algorithm", "data structure", "compiler", "runtime", "syntax",
+    "exception", "debug", "debugging", "api", "endpoint", "database", "sql",
+    "framework", "library", "import ", "module", "package", "react", "node",
+    "django", "flask", "fastapi", "html", "css", "frontend", "backend",
+    "docker", "kubernetes", "git ", "github", "loop", "iteration", "boolean",
+    "integer", "string",
+)
+
+
+def _is_technical(seg: dict, conc: dict) -> bool:
+    """Heuristic probe: does this segment/concept discuss programming?"""
+    parts: list[str] = []
+    for key in ("title", "summary"):
+        val = seg.get(key)
+        if val:
+            parts.append(str(val).lower())
+    seg_concepts = seg.get("concepts") or []
+    if isinstance(seg_concepts, list):
+        parts.extend(str(c).lower() for c in seg_concepts)
+    for key in ("label", "description"):
+        val = conc.get(key)
+        if val:
+            parts.append(str(val).lower())
+    haystack = " ".join(parts).strip()
+    if not haystack:
+        return False
+    return any(kw in haystack for kw in _TECH_KEYWORDS)
+
+
+def _remap_non_technical(etype: str, seg: dict, conc: dict) -> str:
+    """Drop coding/debug for non-technical content; fall back to mcq/conceptual."""
+    if etype in ("coding", "debug") and not _is_technical(seg, conc):
+        remapped = "mcq" if etype == "coding" else "conceptual"
+        logger.info(
+            "Remapping non-technical %r exercise -> %r (segment=%r concept=%r)",
+            etype, remapped, seg.get("id"), conc.get("id"),
+        )
+        return remapped
+    return etype
+
 adapter: TypeAdapter[Exercise] = TypeAdapter(Exercise)
 
 
@@ -81,6 +130,7 @@ def generate_exercises(
         seg = _resolve_segment(cp, segments)
         conc = _resolve_concept(cp, concepts_list)
         etype = _get_exercise_type(cp)
+        etype = _remap_non_technical(etype, seg, conc)
         if etype not in _VALID_TYPES:
             logger.warning("Skipping checkpoint %s: unknown exercise_type %r", cp.get("id"), etype)
             continue
