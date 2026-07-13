@@ -100,6 +100,8 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         segments,
         graph,
         min_gap_sec=settings.pipeline.checkpoint_min_gap_sec,
+        min_start_sec=settings.pipeline.checkpoint_min_start_sec,
+        avoid_final_sec=settings.pipeline.checkpoint_avoid_final_sec,
     )
     cp_map = await persist.persist_checkpoints(
         curriculum_id, tenant_id, checkpoints, seg_map, concept_map

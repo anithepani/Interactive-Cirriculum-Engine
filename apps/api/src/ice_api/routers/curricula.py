@@ -4,6 +4,7 @@ import os
 import logging
 import asyncio
 import traceback
+from difflib import SequenceMatcher
 from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,6 +30,21 @@ class CurriculumCreate(BaseModel):
 class EvaluateRequest(BaseModel):
     checkpoint_id: int
     answer: str
+
+
+def _exercise_payload(exercise: Optional[Exercise]) -> Optional[Dict[str, Any]]:
+    """Return the exercise JSON the frontend renders, always including ``type``.
+
+    New rows store ``{..., question, type}`` via persist_exercises; older rows
+    only have the type-specific sub-dict. Merging ``type`` here lets the
+    frontend route coding vs. mcq vs. conceptual correctly without needing a
+    re-process of existing curricula.
+    """
+    if exercise is None:
+        return None
+    payload = dict(exercise.payload or {})
+    payload.setdefault("type", exercise.type.value if exercise.type else None)
+    return payload or None
 
 
 @router.get("", response_model=List[Dict[str, Any]])
@@ -96,14 +112,44 @@ async def evaluate(
 ):
     try:
         set_tenant_context(str(current_user.tenant_id))
-        stmt = select(Checkpoint).where(Checkpoint.id == payload.checkpoint_id)
-        res = await session.execute(stmt)
-        cp = res.scalar_one_or_none()
+
+        cp_stmt = select(Checkpoint).where(Checkpoint.id == payload.checkpoint_id)
+        cp_res = await session.execute(cp_stmt)
+        cp = cp_res.scalar_one_or_none()
         if not cp:
             raise HTTPException(status_code=404, detail="Checkpoint not found")
 
-        # Placeholder evaluation: accept any non-empty answer
-        passed = bool(payload.answer and payload.answer.strip())
+        # Load the exercise so we can validate the answer against its payload.
+        ex_stmt = select(Exercise).where(Exercise.checkpoint_id == cp.id)
+        ex_res = await session.execute(ex_stmt)
+        exercise = ex_res.scalar_one_or_none()
+
+        answer = (payload.answer or "").strip()
+        if exercise is None:
+            # No exercise generated yet; fall back to non-empty check.
+            return {"status": "ok", "passed": bool(answer)}
+
+        ex_type = exercise.type.value if exercise.type else ""
+        data: Dict[str, Any] = exercise.payload or {}
+
+        if ex_type == "mcq":
+            options = data.get("options") or []
+            answer_idx = data.get("answer_idx", data.get("answer_index"))
+            try:
+                correct = options[int(answer_idx)] if answer_idx is not None else None
+            except (IndexError, TypeError, ValueError):
+                correct = None
+            passed = bool(answer) and answer == correct
+        elif ex_type == "conceptual":
+            reference = data.get("reference_answer") or ""
+            min_sim = float(data.get("min_similarity", 0.7) or 0.7)
+            ratio = SequenceMatcher(None, answer.lower(), reference.lower()).ratio()
+            passed = bool(answer) and bool(reference) and ratio >= min_sim
+        else:
+            # coding / debug route through /api/v1/execute; here we only
+            # accept a non-empty answer so progress can be recorded.
+            passed = bool(answer)
+
         return {"status": "ok", "passed": passed}
 
     except HTTPException:
@@ -186,7 +232,7 @@ async def get_curriculum(
                     "concept_id": cp.concept_id,
                     "exercise_type": cp.exercise_type,
                     "difficulty": cp.difficulty,
-                    "exercise": exercise_map.get(cp.id).payload if exercise_map.get(cp.id) else None,
+                    "exercise": _exercise_payload(exercise_map.get(cp.id)),
                 }
                 for cp in checkpoints
             ],

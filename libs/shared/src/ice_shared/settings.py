@@ -88,6 +88,7 @@ class _Pipeline(BaseSettings):
     min_video_duration_sec: int = 30
     chunk_window_sec: int = 300
     checkpoint_min_gap_sec: int = 90
+    checkpoint_min_start_sec: int = 60  # no checkpoints before this (s)
     checkpoint_avoid_final_sec: int = 30
     run_tests: bool = False  # gate M8 test generation (CPU dev: off by default)
 

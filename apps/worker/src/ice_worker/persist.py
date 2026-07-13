@@ -238,7 +238,19 @@ async def persist_exercises(
             payload = None
             for t in _EX_TYPES:
                 if t in ex and isinstance(ex[t], (dict, list)):
-                    payload = ex[t]
+                    # Merge the type-specific sub-payload with envelope fields
+                    # the frontend needs to render + route: the question text
+                    # (envelope ``prompt``) and the exercise ``type``. Store
+                    # under both ``question`` and ``prompt`` so either
+                    # fallback the modal reads resolves.
+                    sub = ex[t] if isinstance(ex[t], dict) else {"value": ex[t]}
+                    prompt = ex.get("prompt", "")
+                    payload = {
+                        **sub,
+                        "question": prompt,
+                        "prompt": prompt,
+                        "type": etype.value,
+                    }
                     break
             row = Exercise(
                 checkpoint_id=cp_map.get(cp_slug),

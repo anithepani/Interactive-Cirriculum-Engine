@@ -56,6 +56,16 @@ def main() -> int:
         "--min-gap", type=float, default=90.0,
         help="Minimum seconds between checkpoints (default: 90s for production).",
     )
+    parser.add_argument(
+        "--min-start-sec", type=float, default=0.0,
+        help="Minimum seconds before the first checkpoint (default: 0s for "
+        "demos; production worker uses 60s).",
+    )
+    parser.add_argument(
+        "--avoid-final-sec", type=float, default=30.0,
+        help="Avoid placing checkpoints in the final N seconds, except for "
+        "the final segment (default: 30s; matches production).",
+    )
     args = parser.parse_args()
 
     if args.min_gap == 15.0:
@@ -81,7 +91,13 @@ def main() -> int:
     print(f"Loaded {len(graph.get('concepts', []))} concepts from: {graph_path}")
     print()
 
-    checkpoints = place_checkpoints(segments, graph, min_gap_sec=args.min_gap)
+    checkpoints = place_checkpoints(
+        segments,
+        graph,
+        min_gap_sec=args.min_gap,
+        min_start_sec=args.min_start_sec,
+        avoid_final_sec=args.avoid_final_sec,
+    )
 
     if not checkpoints:
         print("No checkpoints placed (all segments filtered by density/final-30s rules).")
@@ -91,6 +107,8 @@ def main() -> int:
     print(f"Video duration: {_fmt_time(video_dur)} ({video_dur:.1f}s)")
     print(f"Avoid zone: final {_AVOID_FINAL_SEC}s (after {_fmt_time(video_dur - _AVOID_FINAL_SEC)})")
     print(f"Min gap: {args.min_gap}s")
+    print(f"Min start: {args.min_start_sec}s")
+    print(f"Avoid final: {args.avoid_final_sec}s")
     print(f"Placed {len(checkpoints)} checkpoint(s):\n")
     print("=" * 70)
     for cp in checkpoints:
