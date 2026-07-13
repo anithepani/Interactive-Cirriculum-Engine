@@ -10,7 +10,7 @@ from ice_shared.logging import configure_logging, get_logger
 
 from ice_api.routers import auth, curricula, execute
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".env"))
 
 
 def create_app() -> FastAPI:
@@ -18,6 +18,7 @@ def create_app() -> FastAPI:
     log = get_logger("ice_api")
 
     app = FastAPI(
+        redirect_slashes=False,
         title="Interactive Curriculum Engine API",
         version="0.1.0",
         description="Convert tutorial videos into interactive, adaptive learning sessions.",

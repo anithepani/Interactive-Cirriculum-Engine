@@ -31,7 +31,7 @@ class EvaluateRequest(BaseModel):
     answer: str
 
 
-@router.get("/", response_model=List[Dict[str, Any]])
+@router.get("", response_model=List[Dict[str, Any]])
 async def list_curricula(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -53,7 +53,7 @@ async def list_curricula(
     ]
 
 
-@router.post("/", response_model=Dict[str, Any])
+@router.post("", response_model=Dict[str, Any])
 async def create_curriculum(
     data: CurriculumCreate,
     current_user: User = Depends(get_current_user),

@@ -18,7 +18,7 @@ export default function CurriculumPage() {
   const { data, error, mutate } = useSWR<CurriculumDetail>(
     id ? `/api/v1/curricula/${id}` : null,
     fetcher,
-    { refreshInterval: 5000 }
+    { refreshInterval: (latest) => (latest && (latest.status === "ready" || latest.status === "failed") ? 0 : 5000) }
   );
 
   const [selectedExercise, setSelectedExercise] = useState<ExercisePayload | null>(null);

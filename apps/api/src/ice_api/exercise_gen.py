@@ -8,7 +8,7 @@ from ice_shared.settings import settings
 from sqlalchemy import text
 from ice_shared.db import async_session
 
-GROQ_API_KEY = settings.GROQ_API_KEY
+GROQ_API_KEY = settings.groq_api_key
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 

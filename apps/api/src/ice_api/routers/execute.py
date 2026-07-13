@@ -20,7 +20,7 @@ class ExecuteResponse(BaseModel):
     output: str
     passed: bool
 
-@router.post("/", response_model=ExecuteResponse)
+@router.post("", response_model=ExecuteResponse)
 async def execute_code(request: ExecuteRequest):
     try:
         # Only Python is supported in this fallback

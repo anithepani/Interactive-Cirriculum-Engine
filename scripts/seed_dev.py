@@ -6,7 +6,7 @@ because it persists via the ice_api ORM models (Integer PKs). Creates a user
 you can log in with to obtain a JWT for POST /api/v1/curricula.
 
 Run:  uv run python scripts/seed_dev.py
-Login: POST /api/v1/auth/login  {"email":"dev@ice.local","password":"devpass123"}
+Login: POST /api/v1/auth/login  {"email":"dev@ice.dev","password":"devpass123"}
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ async def seed() -> None:
         user = User(
             id=1,
             tenant_id=1,
-            email="dev@ice.local",
+            email="dev@ice.dev",
             name="Dev Learner",
             password_hash=hash_password("devpass123"),
             is_verified=True,
@@ -61,7 +61,7 @@ async def seed() -> None:
         session.add_all([tenant, user])
         await session.commit()
 
-    print("Seeded tenant=1 user=1 (dev@ice.local / devpass123)")
+    print("Seeded tenant=1 user=1 (dev@ice.dev / devpass123)")
 
 
 if __name__ == "__main__":

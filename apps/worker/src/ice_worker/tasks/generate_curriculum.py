@@ -18,7 +18,7 @@ import sys
 from typing import Any
 
 from ice_shared import settings
-from ice_shared.db import Base, get_engine, set_tenant_context
+from ice_shared.db import Base, get_engine, reset_engine, set_tenant_context
 
 from ice_worker import persist
 from ice_worker.celery_app import celery_app
@@ -129,6 +129,22 @@ async def _mark_failed(
         logger.exception("could not mark curriculum %s as failed", curriculum_id)
 
 
+async def _run_with_failover(
+    curriculum_id: str, video_ref: str, tenant_id: str
+) -> None:
+    """Run the pipeline; on failure mark the row failed within the same event loop.
+
+    Sharing the loop avoids the dead-asyncpg-pool issue where a second
+    asyncio.run creates a fresh loop whose pooled connections are bound to
+    the now-closed first loop.
+    """
+    try:
+        await _run(curriculum_id, video_ref, tenant_id)
+    except Exception as exc:
+        await _mark_failed(curriculum_id, tenant_id, str(exc))
+        raise
+
+
 @celery_app.task(  # type: ignore[untyped-decorator]
     name="ice_worker.tasks.generate_curriculum.generate_curriculum",
     bind=True,
@@ -145,9 +161,8 @@ def generate_curriculum(
         "generate_curriculum: cid=%s video=%s tenant=%s",
         curriculum_id, video_ref, tenant_id,
     )
-    try:
-        asyncio.run(_run(curriculum_id, video_ref, tenant_id))
-    except Exception as exc:
-        asyncio.run(_mark_failed(curriculum_id, tenant_id, str(exc)))
-        raise
+    # Drop any engine singleton from a previous asyncio.run in this worker
+    # process — its asyncpg pool is bound to a now-closed event loop.
+    reset_engine()
+    asyncio.run(_run_with_failover(curriculum_id, video_ref, tenant_id))
     return curriculum_id

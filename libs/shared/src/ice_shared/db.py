@@ -24,10 +24,6 @@ tenant_id_context: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 
-class Base(DeclarativeBase):
-    pass
-
-
 def set_tenant_context(tenant_id: str) -> None:
     """Bind tenant id for the current async context (SQLite / legacy callers)."""
     tenant_id_context.set(tenant_id)
@@ -63,15 +59,16 @@ def get_session_factory() -> async_sessionmaker[AsyncSession]:
     return _session_factory
 
 
-# Alias used by background tasks (process.py, exercise_gen.py)
-class _AsyncSessionMaker:
-    """Lazy proxy so async_session() works like the legacy sessionmaker."""
+def reset_engine() -> None:
+    """Reset the engine + session factory singletons (sync, no await).
 
-    def __call__(self):
-        return get_session_factory()()
-
-
-async_session = _AsyncSessionMaker()
+    Call at the start of each Celery task before ``asyncio.run`` so a fresh
+    engine is created on the new event loop instead of reusing a stale one
+    whose asyncpg connection pool is bound to a previous (now-closed) loop.
+    """
+    global _engine, _session_factory
+    _engine = None
+    _session_factory = None
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

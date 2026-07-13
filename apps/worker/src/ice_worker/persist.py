@@ -63,7 +63,7 @@ async def set_curriculum_status(
             return
         c.status = CurriculumStatus(status)
         if ready:
-            c.ready_at = datetime.now(UTC)
+            c.ready_at = datetime.now(UTC).replace(tzinfo=None)
         await session.commit()
 
 

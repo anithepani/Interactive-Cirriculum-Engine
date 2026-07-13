@@ -18,16 +18,21 @@ from ice_shared.db import get_session
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-# JWT config – use settings or fallback defaults
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-me")
-ALGORITHM = "HS256"
+# JWT config - use the canonical settings.jwt_secret (set via .env / JWT_SECRET).
+# This is the single source of truth so sign (create_access_token) and verify
+# (get_current_user, /refresh) use the same key. Do NOT read JWT_SECRET_KEY
+# from os.getenv here: main.py's load_dotenv points at a non-existent path
+# inside the Docker container, which would fall back to a divergent default
+# and break signature verification.
+SECRET_KEY = settings.jwt_secret
+ALGORITHM = settings.jwt_algorithm
 
 # Try to get values from settings, use fallback if not defined
 def get_access_token_expire_minutes():
-    return getattr(settings, 'ACCESS_TOKEN_EXPIRE_MINUTES', 1440)
+    return getattr(settings, 'jwt_access_ttl_min', 60)
 
 def get_refresh_token_expire_days():
-    return getattr(settings, 'REFRESH_TOKEN_EXPIRE_DAYS', 7)
+    return getattr(settings, 'jwt_refresh_ttl_days', 7)
 
 def generate_verification_code() -> str:
     """Generate a 6-digit numeric code."""
@@ -62,10 +67,16 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        user_id_raw = payload.get("sub")
+        if user_id_raw is None:
             raise credentials_exception
-    except JWTError:
+        # Reject refresh tokens used as access tokens (RFC-style type claim).
+        if payload.get("type") != "access":
+            raise credentials_exception
+        # "sub" must be a string per JWT RFC 7519; python-jose enforces this on
+        # decode. Cast back to int for the ORM lookup (User.id is Integer).
+        user_id = int(user_id_raw)
+    except (JWTError, ValueError, TypeError):
         raise credentials_exception
     
     stmt = select(User).where(User.id == user_id, User.is_active == True)

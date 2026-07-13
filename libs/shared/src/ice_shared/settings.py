@@ -130,6 +130,10 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     from_email: str = ""
 
+    # LLM providers (Groq is the primary Phase-0 path; OpenAI/OpenRouter are fallback)
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+
     sentry_dsn: str = ""
     prometheus_metrics_port: int = 9090
 
