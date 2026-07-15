@@ -11,6 +11,7 @@ import ExerciseModal from "@/components/ExerciseModal";
 import VideoProgressBar, { StatusMap } from "@/components/VideoProgressBar";
 import CheckpointDonut from "@/components/CheckpointDonut";
 import { authFetcher, authFetch } from "@/lib/auth";
+import RecapPlayer from "@/components/RecapPlayer";
 
 const fetcher = authFetcher;
 
@@ -35,7 +36,7 @@ export default function CurriculumPage() {
   const { data, error, mutate } = useSWR<CurriculumDetail>(
     id ? `/api/v1/curricula/${id}` : null,
     fetcher,
-    { refreshInterval: (latest) => (latest && (latest.status === "ready" || latest.status === "failed") ? 0 : 5000) }
+    { refreshInterval: (latest) => (latest && (latest.status === "processing" || latest.status === "queued" || latest.recap_status === "processing") ? 5000 : 0) }
   );
 
   const [selectedExercise, setSelectedExercise] = useState<ExercisePayload | null>(null);
@@ -269,6 +270,22 @@ export default function CurriculumPage() {
           checkpoints={checkpoints}
           statusMap={statusMap}
           onMarkerClick={(index) => openExerciseModal(checkpoints[index], index)}
+        />
+        
+        <RecapPlayer
+          curriculumId={data.id}
+          recapStatus={data.recap_status || "none"}
+          recapUrl={data.recap_url ?? null}
+          onTrigger={async () => {
+            try {
+              const res = await authFetch(`/api/v1/curricula/${data.id}/recap`, { method: "POST" });
+              if (!res.ok) throw new Error("Failed to trigger recap");
+              mutate();
+            } catch (err) {
+              console.error(err);
+              alert("Failed to start recap generation.");
+            }
+          }}
         />
       </div>
 
