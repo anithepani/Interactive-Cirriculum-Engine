@@ -30,6 +30,8 @@ export interface CurriculumDetail {
   video_url?: string;
   video_ref?: string;
   status: string;
+  recap_status?: "none" | "processing" | "ready" | "failed";
+  recap_url?: string | null;
   created_at?: string;
   ready_at?: string;
   segments: Segment[];
