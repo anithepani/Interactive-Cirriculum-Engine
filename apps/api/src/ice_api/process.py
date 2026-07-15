@@ -57,6 +57,28 @@ async def process_video(
             curriculum_id, video_ref, tenant_id,
         )
     except Exception:
-        # Broker down etc. The curriculum stays in `queued`; the frontend will
-        # show it never progressed. Surface the error but don't crash the request.
+        # Surface the error but don't crash the request.
         logger.exception("failed to dispatch generate_curriculum task")
+
+
+async def trigger_recap(
+    curriculum_id: Any, tenant_id: Any
+) -> None:
+    """Dispatch recap generation to the Celery worker.
+
+    Args:
+        curriculum_id: id of the Curriculum row.
+        tenant_id: owning tenant id (for RLS + S3 scoping).
+    """
+    try:
+        _get_sender().send_task(
+            "ice_worker.tasks.recap.generate_recap",
+            args=[str(curriculum_id), str(tenant_id)],
+        )
+        logger.info(
+            "dispatched generate_recap: cid=%s tenant=%s",
+            curriculum_id, tenant_id,
+        )
+    except Exception:
+        logger.exception("failed to dispatch generate_recap task")
+
