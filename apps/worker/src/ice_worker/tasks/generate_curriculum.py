@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import sys
+import tempfile
 from typing import Any
 
 from ice_shared import settings
 from ice_shared.db import Base, get_engine, reset_engine, set_tenant_context
+from ice_shared.s3 import get_s3_client
 
 from ice_worker import persist
 from ice_worker.celery_app import celery_app
@@ -66,20 +69,68 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         curriculum_id, tenant_id, "audio", ingest["s3_key"]
     )
     audio_path = ingest["audio_path"]
+    
+    # ─── Upload source video to S3 ─────────────────────────────────────────
+    s3 = get_s3_client()
+    video_path = ingest.get("video_path")
+    if not video_path or not os.path.exists(video_path):
+        video_path = audio_path.replace(".wav", ".mp4")
+        if not os.path.exists(video_path):
+            video_path = audio_path.replace(".wav", ".webm")
+            
+    if video_path and os.path.exists(video_path):
+        ext = os.path.splitext(video_path)[1]
+        content_type = "video/mp4" if ext == ".mp4" else "video/webm"
+        video_s3_key = f"tenants/{tenant_id}/curricula/{curriculum_id}/video{ext}"
+        
+        s3.upload_file(
+            video_path,
+            settings.s3.bucket,
+            video_s3_key,
+            ExtraArgs={'ContentType': content_type}
+        )
+        
+        await persist.save_artifact(
+            curriculum_id, tenant_id, "video", video_s3_key
+        )
+        
+        # Clean up video file after upload
+        with contextlib.suppress(OSError):
+            os.remove(video_path)
+    else:
+        logger.warning("Source video file not found; skipping video artifact upload.")
 
     # ---- M2: transcribe (faster-whisper, tiny / cpu / int8) ----
     from ice_transcript import transcribe
 
     transcript = transcribe(audio_path)
+
+    # ─── Upload transcript JSON to S3 ─────────────────────────────────────────
+    s3 = get_s3_client()
+    s3_key = f"tenants/{tenant_id}/curricula/{curriculum_id}/transcript.json"
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(transcript, f)
+        f.flush()
+        s3.upload_file(
+            f.name,
+            settings.s3.bucket,
+            s3_key,
+            ExtraArgs={'ContentType': 'application/json'}
+        )
+        os.unlink(f.name)  # clean up
+
+    # Save artifact record
     await persist.save_artifact(
         curriculum_id,
         tenant_id,
         "transcript",
-        f"tenants/{tenant_id}/curricula/{curriculum_id}/transcript.json",
+        s3_key,
         meta={"language": transcript.get("language")},
     )
+
     with contextlib.suppress(OSError):
         os.remove(audio_path)
+
     # ---- M4: segment transcript ----
     from ice_segmentation import segment_transcript
 
