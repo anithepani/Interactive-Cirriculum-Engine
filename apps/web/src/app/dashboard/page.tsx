@@ -1,28 +1,18 @@
-/**
- * Dashboard Page — /dashboard (light-theme redesign)
- * ----------------------------------------------------
- * Fully aligned with the site's light design system:
- *   - Background: bg-canvas (#f4f4f4)
- *   - Text: text-ink (#111111), text-ink-soft (#4b4b4b)
- *   - Cards: bg-white border border-ink/10 rounded-[2rem]
- *   - Accents: indigo-500 → purple-600 gradient
- *   - Typography: font-display (Space Grotesk) + font-body (Inter)
- *   - Framer Motion: stagger entrance, hover lift
- *   - Delete: each card exposes a trash icon; confirm modal guards the action
- */
-
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Video, RefreshCw, AlertTriangle, Trash2, X } from "lucide-react";
+import { Plus, Video, RefreshCw, AlertTriangle, Trash2, X, ChevronRight, BookOpen, Clock, Activity, Flame } from "lucide-react";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import CurriculumCard from "@/components/CurriculumCard";
-import { authFetcher, authFetch } from "@/lib/auth";
+import AppLayout from "@/components/layout/AppLayout";
+import { DashboardBarChart, DashboardDonutChart, MiniCalendar } from "@/components/dashboard/Charts";
+import { authFetcher, authFetch, getCurrentUser, type AuthUser } from "@/lib/auth";
 import { staggerContainer } from "@/lib/motion";
 import type { CurriculumSummary } from "@/lib/types";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 /* ── Polling ──────────────────────────────────────────────────────────── */
 const POLL_INTERVAL = 5_000;
@@ -80,10 +70,7 @@ function DeleteModal({
             type="button"
             onClick={onCancel}
             disabled={deleting}
-            className="flex-1 rounded-full border border-ink/15 bg-white px-4 py-2.5
-                       text-sm font-semibold text-ink transition hover:bg-ink/5
-                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20
-                       disabled:opacity-50"
+            className="flex-1 rounded-full border border-ink/15 bg-white px-4 py-2.5 text-sm font-semibold text-ink transition hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20 disabled:opacity-50"
           >
             Cancel
           </button>
@@ -91,10 +78,7 @@ function DeleteModal({
             type="button"
             onClick={onConfirm}
             disabled={deleting}
-            className="flex flex-1 items-center justify-center gap-2 rounded-full
-                       bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white
-                       transition hover:bg-rose-700 focus-visible:outline-none
-                       focus-visible:ring-2 focus-visible:ring-rose-400 disabled:opacity-50"
+            className="flex flex-1 items-center justify-center gap-2 rounded-full bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 disabled:opacity-50"
           >
             {deleting ? (
               <LoadingSpinner size={16} />
@@ -111,172 +95,206 @@ function DeleteModal({
   );
 }
 
-/* ── Section header ────────────────────────────────────────────────────── */
-function PageHeader({ count }: { count?: number }) {
+/* ── Hero Banner ───────────────────────────────────────────────────────── */
+function HeroBanner({ user }: { user: AuthUser | null }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, ease: "easeOut" as const }}
-      className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between"
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-600 via-purple-600 to-fuchsia-600 p-8 text-white shadow-lg md:p-10"
     >
-      <div>
-        {/* Overline */}
-        <p className="font-mono text-xs uppercase tracking-widest text-indigo-500">
-          My workspace
-        </p>
-
-        {/* Heading — uses font-display (Space Grotesk) like the landing page h1 */}
-        <h1 className="mt-2 font-display text-4xl font-black text-ink md:text-5xl">
-          Your Curricula
-        </h1>
-
-        {/* Gradient underline bar */}
-        <div className="mt-3 h-1 w-20 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500" />
-
-        <p className="mt-4 text-sm text-ink-soft">
-          {typeof count === "number" && count > 0
-            ? `${count} curriculum${count !== 1 ? "a" : ""} generated from video tutorials.`
-            : "Generate interactive curricula from any YouTube video or local file."}
-        </p>
+      <div className="relative z-10 flex flex-col items-start gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="max-w-xl">
+          <h1 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
+            Welcome back, {user ? user.name.split(" ")[0] : "Learner"}!
+          </h1>
+          <p className="mt-3 text-sm text-white/80 md:text-base leading-relaxed">
+            Sharpen your skills with professional interactive courses automatically generated from your favorite videos.
+          </p>
+          <div className="mt-8">
+            <Link
+              href="/upload"
+              className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-indigo-600 shadow-md transition hover:scale-105 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+            >
+              Upload New Curriculum
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+        
+        {/* Decorative Graphic element */}
+        <div className="hidden opacity-50 md:block absolute right-0 top-0 translate-x-1/4 -translate-y-1/4">
+           <svg width="300" height="300" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+              <path fill="#ffffff" d="M44.7,-76.4C58.8,-69.2,71.8,-59.1,81.1,-46.3C90.4,-33.5,96,-18,94.4,-3C92.8,12,84,25.6,73.4,36.5C62.8,47.4,50.4,55.5,37.3,62.7C24.2,69.9,10.4,76.2,-4.3,83.7C-19.1,91.2,-34.7,99.9,-47.4,96.3C-60.1,92.7,-69.8,76.8,-76.4,60.8C-83,44.8,-86.5,28.8,-87.3,13.2C-88.1,-2.4,-86.2,-17.6,-80.7,-31.8C-75.2,-46,-66,-59.2,-53.4,-67.2C-40.8,-75.2,-24.8,-78,-9.2,-78.9C6.4,-79.8,22.8,-78.8,44.7,-76.4Z" transform="translate(100 100) scale(1.1)" />
+            </svg>
+        </div>
       </div>
-
-      {/* CTA button */}
-      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-        <Link
-          href="/upload"
-          id="new-curriculum-btn"
-          className="inline-flex items-center gap-2 rounded-full
-                     bg-gradient-to-r from-indigo-500 to-purple-600
-                     px-6 py-3 text-sm font-semibold text-white shadow-md
-                     shadow-indigo-200 transition-shadow duration-200
-                     hover:shadow-indigo-300 focus-visible:outline-none
-                     focus-visible:ring-2 focus-visible:ring-indigo-400"
-        >
-          <Plus className="h-4 w-4" />
-          New curriculum
-        </Link>
-      </motion.div>
     </motion.div>
   );
 }
 
-/* ── Empty state ───────────────────────────────────────────────────────── */
+/* ── Statistics Row ────────────────────────────────────────────────────── */
+function StatsRow({ data }: { data: CurriculumSummary[] | undefined }) {
+  const count = data?.length || 0;
+  
+  return (
+    <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="flex items-center gap-4 rounded-3xl border border-ink/5 bg-white p-5 shadow-sm">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+          <BookOpen className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-ink-soft uppercase tracking-wider">Curricula</p>
+          <p className="font-display text-xl font-bold text-ink">{count}</p>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-4 rounded-3xl border border-ink/5 bg-white p-5 shadow-sm">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-pink-50 text-pink-600">
+          <Activity className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-ink-soft uppercase tracking-wider">Exercises Done</p>
+          <p className="font-display text-xl font-bold text-ink">{count * 3}</p>
+        </div>
+      </div>
+      
+      <div className="flex items-center gap-4 rounded-3xl border border-ink/5 bg-white p-5 shadow-sm">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+          <Clock className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-ink-soft uppercase tracking-wider">Hours Learned</p>
+          <p className="font-display text-xl font-bold text-ink">{Math.round(count * 1.5)}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Empty & Error States ──────────────────────────────────────────────── */
 function EmptyState() {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
-      transition={{ duration: 0.4, ease: "easeOut" as const }}
-      className="flex flex-col items-center justify-center gap-6 rounded-[2rem]
-                 border border-ink/10 bg-white py-20 px-8 text-center shadow-sm"
+      className="flex flex-col items-center justify-center gap-6 rounded-[2rem] border border-ink/10 bg-white py-20 px-8 text-center shadow-sm"
     >
-      {/* Floating icon */}
       <motion.div
         animate={{ y: [0, -8, 0] }}
         transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
         className="flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"
-        aria-hidden="true"
       >
         <Video className="h-10 w-10" />
       </motion.div>
-
       <div className="max-w-xs space-y-2">
-        <p className="font-display text-xl font-bold text-ink">
-          No curricula yet
-        </p>
+        <p className="font-display text-xl font-bold text-ink">No curricula yet</p>
         <p className="text-sm leading-relaxed text-ink-soft">
-          Upload your first video to get started — paste a YouTube URL or drop a
-          local file.
+          Upload your first video to get started — paste a YouTube URL or drop a local file.
         </p>
       </div>
-
-      <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}>
-        <Link
-          href="/upload"
-          id="empty-state-upload-btn"
-          className="inline-flex items-center gap-2 rounded-full
-                     bg-gradient-to-r from-indigo-500 to-purple-600
-                     px-6 py-3 text-sm font-semibold text-white shadow-md
-                     shadow-indigo-200 hover:shadow-indigo-300
-                     transition-shadow duration-200 focus-visible:outline-none
-                     focus-visible:ring-2 focus-visible:ring-indigo-400"
-        >
-          <Plus className="h-4 w-4" />
-          Get started
-        </Link>
-      </motion.div>
     </motion.div>
   );
 }
 
-/* ── Error state ───────────────────────────────────────────────────────── */
 function ErrorState({ message }: { message: string }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex items-start gap-4 rounded-[2rem] border border-rose-200
-                 bg-rose-50 px-6 py-5 text-rose-700"
-      role="alert"
-    >
+    <div className="flex items-start gap-4 rounded-[2rem] border border-rose-200 bg-rose-50 px-6 py-5 text-rose-700">
       <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-500" />
       <div>
         <p className="font-semibold text-rose-700">Failed to load curricula</p>
         <p className="mt-1 text-sm text-rose-600">{message}</p>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-/* ── Loading skeleton ──────────────────────────────────────────────────── */
 function LoadingSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-      {[...Array(3)].map((_, i) => (
-        <div
-          key={i}
-          className="h-64 animate-pulse rounded-[2rem] border border-ink/10 bg-ink/5"
-          style={{ animationDelay: `${i * 0.1}s` }}
-        />
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      {[...Array(2)].map((_, i) => (
+        <div key={i} className="h-64 animate-pulse rounded-[2rem] border border-ink/10 bg-ink/5" style={{ animationDelay: `${i * 0.1}s` }} />
       ))}
     </div>
   );
 }
 
-/* ── Inline delete error toast ────────────────────────────────────────── */
-function DeleteErrorToast({
-  message,
-  onDismiss,
-}: {
-  message: string;
-  onDismiss: () => void;
-}) {
+/* ── Right Sidebar Stats Placeholder ───────────────────────────────────── */
+function RightSidebarStats({ user, data }: { user: AuthUser | null, data?: CurriculumSummary[] }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -8 }}
-      className="flex items-center gap-3 rounded-2xl border border-rose-200
-                 bg-rose-50 px-4 py-3 text-rose-700 shadow-sm"
-      role="alert"
-    >
-      <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
-      <p className="flex-1 text-sm">{message}</p>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="text-rose-400 transition hover:text-rose-600"
-        aria-label="Dismiss"
-      >
-        <X className="h-4 w-4" />
-      </button>
-    </motion.div>
+    <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+      <div className="flex items-center justify-between">
+        <h3 className="font-display text-lg font-bold text-ink">Statistic</h3>
+        <button className="text-ink-soft hover:text-ink">
+          <span className="sr-only">More options</span>
+          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="mt-8 flex flex-col items-center">
+        <div className="relative flex h-32 w-32 items-center justify-center rounded-full border-[6px] border-indigo-100">
+          {/* Faux progress ring */}
+          <svg className="absolute inset-0 h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="46" fill="transparent" stroke="currentColor" strokeWidth="8" className="text-indigo-600" strokeDasharray="289" strokeDashoffset="180" strokeLinecap="round" />
+          </svg>
+          <Avatar className="h-20 w-20">
+            <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'ICE'}`} />
+            <AvatarFallback>{user?.name?.[0] || 'U'}</AvatarFallback>
+          </Avatar>
+        </div>
+        <div className="mt-6 text-center">
+          <h4 className="flex items-center justify-center gap-1 font-display text-xl font-bold text-ink">
+            Good Morning {user?.name?.split(" ")[0] || "Learner"} <Flame className="h-5 w-5 text-orange-500 fill-orange-500" />
+          </h4>
+          <p className="mt-2 text-sm text-ink-soft">Continue your learning to achieve your target!</p>
+        </div>
+      </div>
+
+      <div className="mt-10">
+         <div className="mb-4 flex items-center justify-between">
+           <h3 className="font-display text-lg font-bold text-ink">Recent Activity</h3>
+         </div>
+         <div className="space-y-4">
+           {(!data || data.length === 0) ? (
+             <p className="text-sm text-ink-soft text-center py-4">No recent activity</p>
+           ) : (
+             data.slice(0, 3).map((item) => (
+               <div key={item.id} className="flex items-center justify-between rounded-2xl border border-ink/5 p-3 hover:bg-ink/5 transition-colors">
+                 <div className="flex items-center gap-3 overflow-hidden">
+                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                     <BookOpen className="h-5 w-5" />
+                   </div>
+                   <div className="min-w-0">
+                     <p className="text-sm font-bold text-ink truncate">{item.title}</p>
+                     <p className="text-xs text-ink-soft capitalize">{item.status}</p>
+                   </div>
+                 </div>
+               </div>
+             ))
+           )}
+         </div>
+      </div>
+    </div>
   );
 }
 
 /* ── Page ──────────────────────────────────────────────────────────────── */
 export default function DashboardPage() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  const fetchUser = () => {
+    getCurrentUser().then(setUser);
+  };
+
+  useEffect(() => {
+    fetchUser();
+    window.addEventListener("userUpdated", fetchUser);
+    return () => window.removeEventListener("userUpdated", fetchUser);
+  }, []);
+
   const { data, error, isLoading, isValidating, mutate } =
     useSWR<CurriculumSummary[]>("/api/v1/curricula", authFetcher, {
       refreshInterval,
@@ -292,18 +310,12 @@ export default function DashboardPage() {
     setDeleting(true);
     setDeleteError(null);
     try {
-      const res = await authFetch(`/api/v1/curricula/${pendingDelete.id}`, {
-        method: "DELETE",
-      });
+      const res = await authFetch(`/api/v1/curricula/${pendingDelete.id}`, { method: "DELETE" });
       if (!res.ok) {
         const text = await res.text();
         throw new Error(text || `Server error ${res.status}`);
       }
-      // Optimistically remove from cache
-      await mutate(
-        (prev) => prev?.filter((c) => c.id !== pendingDelete.id),
-        { revalidate: false }
-      );
+      await mutate((prev) => prev?.filter((c) => c.id !== pendingDelete.id), { revalidate: false });
       setPendingDelete(null);
     } catch (err) {
       setDeleteError((err as Error).message || "Failed to delete curriculum.");
@@ -313,81 +325,94 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10 md:py-16">
-      <PageHeader count={data?.length} />
+    <AppLayout>
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
+        {/* Main Content Column (Banner + Curricula) */}
+        <div className="flex flex-col gap-8 xl:col-span-2">
+          
+          <HeroBanner user={user} />
+          
+          <StatsRow data={data} />
 
-      {/* Polling indicator */}
-      <AnimatePresence>
-        {isValidating && !isLoading && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="mt-3 flex items-center gap-2 text-xs text-ink-soft/60"
-          >
-            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            Checking for updates…
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Delete error */}
-      <AnimatePresence>
-        {deleteError && (
-          <div className="mt-4">
-            <DeleteErrorToast
-              message={deleteError}
-              onDismiss={() => setDeleteError(null)}
-            />
+          {/* Project Analytics Chart */}
+          <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+            <h2 className="mb-6 font-display text-xl font-bold text-ink">Learning Analytics</h2>
+            <DashboardBarChart data={data || []} />
           </div>
-        )}
-      </AnimatePresence>
 
-      <div className="mt-10">
-        {isLoading ? (
-          <LoadingSkeleton />
-        ) : error ? (
-          <ErrorState message={(error as Error).message} />
-        ) : !data || data.length === 0 ? (
-          <EmptyState />
-        ) : (
-          <motion.div
-            variants={staggerContainer}
-            initial="hidden"
-            animate="visible"
-            className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3"
-          >
-            {data.map((curriculum, index) => (
-              <CurriculumCard
-                key={curriculum.id}
-                curriculum={curriculum}
-                index={index}
-                onDelete={(id) => {
-                  const target = data.find((c) => c.id === id) ?? null;
-                  setPendingDelete(target);
-                }}
-              />
-            ))}
-          </motion.div>
-        )}
+          {/* Continue Watching Section */}
+          <div className="mt-4">
+            <div className="mb-6 flex items-center justify-between">
+              <h2 className="font-display text-2xl font-bold text-ink">Continue Watching</h2>
+              <div className="flex items-center gap-2">
+                <AnimatePresence>
+                  {isValidating && !isLoading && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex items-center gap-1 text-xs text-ink-soft">
+                      <RefreshCw className="h-3 w-3 animate-spin" />
+                      Syncing
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="mb-4 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-rose-700">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
+                <p className="flex-1 text-sm">{deleteError}</p>
+                <button onClick={() => setDeleteError(null)} className="text-rose-400 hover:text-rose-600"><X className="h-4 w-4" /></button>
+              </div>
+            )}
+
+            {isLoading ? (
+              <LoadingSkeleton />
+            ) : error ? (
+              <ErrorState message={(error as Error).message} />
+            ) : !data || data.length === 0 ? (
+              <EmptyState />
+            ) : (
+              <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                {data.map((curriculum, index) => (
+                  <CurriculumCard
+                    key={curriculum.id}
+                    curriculum={curriculum}
+                    index={index}
+                    onDelete={(id) => {
+                      const target = data.find((c) => c.id === id) ?? null;
+                      setPendingDelete(target);
+                    }}
+                  />
+                ))}
+              </motion.div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Sidebar Column (Stats & Mentors) */}
+        <div className="flex flex-col gap-8 xl:col-span-1">
+          <RightSidebarStats user={user} data={data} />
+
+          <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+            <h2 className="mb-6 font-display text-xl font-bold text-ink">Project Progress</h2>
+            <DashboardDonutChart data={data || []} />
+          </div>
+
+          <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+            <MiniCalendar data={data || []} />
+          </div>
+        </div>
       </div>
 
-      {/* Delete confirm modal */}
       <AnimatePresence>
         {pendingDelete && (
           <DeleteModal
             title={pendingDelete.title}
             onConfirm={handleDeleteConfirm}
-            onCancel={() => {
-              if (!deleting) {
-                setPendingDelete(null);
-                setDeleteError(null);
-              }
-            }}
+            onCancel={() => { if (!deleting) { setPendingDelete(null); setDeleteError(null); } }}
             deleting={deleting}
           />
         )}
       </AnimatePresence>
-    </div>
+    </AppLayout>
   );
 }
