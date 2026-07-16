@@ -24,6 +24,7 @@ import {
   Loader2,
   Info,
 } from "lucide-react";
+import AppLayout from "@/components/layout/AppLayout";
 import UploadZone from "@/components/UploadZone";
 import { authFetch } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -163,10 +164,10 @@ export default function UploadPage() {
 
   const canSubmit = !loading && !success && (!!videoUrl || !!draggedFile);
 
-  /* ── Render ─────────────────────────────────────────────────────────── */
   return (
-    <div className="mx-auto max-w-2xl px-6 py-10 md:py-16">
-      {/* ── Page header ─────────────────────────────────────────────────── */}
+    <AppLayout>
+      <div className="mx-auto max-w-2xl px-6 py-10 md:py-16">
+        {/* ── Page header ─────────────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -370,6 +371,7 @@ export default function UploadPage() {
           ]}
         />
       </motion.div>
-    </div>
+      </div>
+    </AppLayout>
   );
 }
