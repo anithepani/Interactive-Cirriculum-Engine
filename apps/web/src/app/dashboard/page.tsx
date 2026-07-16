@@ -8,7 +8,7 @@ import { Plus, Video, RefreshCw, AlertTriangle, Trash2, X, ChevronRight, BookOpe
 import LoadingSpinner from "@/components/LoadingSpinner";
 import CurriculumCard from "@/components/CurriculumCard";
 import AppLayout from "@/components/layout/AppLayout";
-import { DashboardBarChart, DashboardDonutChart, MiniCalendar } from "@/components/dashboard/Charts";
+import { DashboardAreaChart, DashboardDonutChart, MiniCalendar } from "@/components/dashboard/Charts";
 import { authFetcher, authFetch, getCurrentUser, type AuthUser } from "@/lib/auth";
 import { staggerContainer } from "@/lib/motion";
 import type { CurriculumSummary } from "@/lib/types";
@@ -337,7 +337,7 @@ export default function DashboardPage() {
           {/* Project Analytics Chart */}
           <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
             <h2 className="mb-6 font-display text-xl font-bold text-ink">Learning Analytics</h2>
-            <DashboardBarChart data={data || []} />
+            <DashboardAreaChart data={data || []} />
           </div>
 
           {/* Continue Watching Section */}
