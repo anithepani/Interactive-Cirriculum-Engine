@@ -4,7 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { LogIn, LogOut, Menu, Settings, Sparkles, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { NAV_LINKS } from "@/lib/data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,10 @@ export default function Navbar() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authed, setAuthed] = useState(false);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Hide Navbar on app routes (dashboard, exercises, progress, settings)
+  const isAppRoute = /^\/(dashboard|exercises|progress|settings)/.test(pathname || "");
 
   useEffect(() => {
     setAuthed(isAuthenticated());
@@ -56,6 +60,8 @@ export default function Navbar() {
         .slice(0, 2)
         .toUpperCase()
     : "ICE";
+
+  if (isAppRoute) return null;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-black/5 bg-white/60 backdrop-blur-lg">
