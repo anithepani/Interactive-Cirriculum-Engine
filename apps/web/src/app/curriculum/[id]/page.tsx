@@ -12,6 +12,8 @@ import VideoProgressBar, { StatusMap } from "@/components/VideoProgressBar";
 import CheckpointDonut from "@/components/CheckpointDonut";
 import { authFetcher, authFetch } from "@/lib/auth";
 import RecapPlayer from "@/components/RecapPlayer";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 const fetcher = authFetcher;
 
@@ -186,6 +188,16 @@ export default function CurriculumPage() {
 
   return (
     <div className="space-y-6 px-6 py-8 mx-auto max-w-5xl">
+      <div className="flex items-center mb-2">
+        <Link 
+          href="/dashboard"
+          className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-ink shadow-sm ring-1 ring-inset ring-ink/10 transition hover:bg-indigo-50 hover:text-indigo-600 hover:ring-indigo-200"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Link>
+      </div>
+      
       <div className="rounded-[2rem] border border-ink/10 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
