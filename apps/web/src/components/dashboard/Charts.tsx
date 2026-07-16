@@ -37,29 +37,33 @@ export function DashboardAreaChart({ data = [] }: { data: CurriculumSummary[] })
             <stop offset="0%" stopColor="#4f46e5" stopOpacity="0.5" />
             <stop offset="100%" stopColor="#4f46e5" stopOpacity="0" />
           </linearGradient>
+          <clipPath id="wipe-clip">
+            <motion.rect
+              x="0" y="-50" width="600" height="300"
+              initial={{ width: 0 }}
+              animate={{ width: 600 }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+            />
+          </clipPath>
         </defs>
         
-        {/* Area fill */}
-        <motion.path
-          d={areaPath}
-          fill="url(#gradient-area)"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1.5, delay: 0.5 }}
-        />
-        
-        {/* Line */}
-        <motion.path
-          d={linePath}
-          fill="none"
-          stroke="#4f46e5"
-          strokeWidth="4"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 1.5, ease: "easeOut" }}
-        />
+        <g clipPath="url(#wipe-clip)">
+          {/* Area fill */}
+          <path
+            d={areaPath}
+            fill="url(#gradient-area)"
+          />
+          
+          {/* Line */}
+          <path
+            d={linePath}
+            fill="none"
+            stroke="#4f46e5"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
         
         {/* Data points */}
         {stats.map((stat, i) => (
