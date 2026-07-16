@@ -15,7 +15,7 @@ const SOCIAL_ICONS = {
 
 export default function Footer() {
   const pathname = usePathname();
-  const isAppRoute = /^\/(dashboard|exercises|progress|settings)/.test(pathname || "");
+  const isAppRoute = /^\/(dashboard|exercises|progress|settings|upload|curriculum)/.test(pathname || "");
 
   if (isAppRoute) return null;
 
