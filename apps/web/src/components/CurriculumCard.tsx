@@ -22,6 +22,8 @@ interface CurriculumCardProps {
   index: number;
   /** Called when the delete button is clicked */
   onDelete?: (id: number) => void;
+  /** Optional prefix for the curriculum link */
+  hrefPrefix?: string;
 }
 
 /** Entrance variants — matches the landing page fadeUp motion */
@@ -51,6 +53,7 @@ export default function CurriculumCard({
   curriculum,
   index,
   onDelete,
+  hrefPrefix = "/curriculum",
 }: CurriculumCardProps) {
   const isReady = curriculum.status === "ready";
 
@@ -127,7 +130,7 @@ export default function CurriculumCard({
         {/* CTA */}
         {isReady ? (
           <Link
-            href={`/curriculum/${curriculum.id}`}
+            href={`${hrefPrefix}/${curriculum.id}`}
             aria-label={`Open curriculum: ${curriculum.title}`}
             className="group/btn inline-flex items-center justify-center gap-2 rounded-full
                        bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-2.5
