@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Github, Linkedin, Twitter, Youtube } from "lucide-react";
 import { FOOTER_COLUMNS, PRODUCT, SOCIAL_LINKS } from "@/lib/data";
 import { Separator } from "@/components/ui/separator";
@@ -11,6 +14,11 @@ const SOCIAL_ICONS = {
 } as const;
 
 export default function Footer() {
+  const pathname = usePathname();
+  const isAppRoute = /^\/(dashboard|exercises|progress|settings)/.test(pathname || "");
+
+  if (isAppRoute) return null;
+
   return (
     <footer id="contact" className="bg-canvas px-6 py-16">
       <div className="mx-auto max-w-container">
