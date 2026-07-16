@@ -14,6 +14,7 @@ import { authFetcher, authFetch } from "@/lib/auth";
 import RecapPlayer from "@/components/RecapPlayer";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import AppLayout from "@/components/layout/AppLayout";
 
 const fetcher = authFetcher;
 
@@ -187,8 +188,9 @@ export default function CurriculumPage() {
   const videoId = getYouTubeId(videoUrl);
 
   return (
-    <div className="space-y-6 px-6 py-8 mx-auto max-w-5xl">
-      <div className="flex items-center mb-2">
+    <AppLayout>
+      <div className="space-y-6 px-6 py-8 mx-auto max-w-5xl">
+        <div className="flex items-center mb-2">
         <Link 
           href="/dashboard"
           className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-ink shadow-sm ring-1 ring-inset ring-ink/10 transition hover:bg-indigo-50 hover:text-indigo-600 hover:ring-indigo-200"
@@ -327,6 +329,7 @@ export default function CurriculumPage() {
           }}
         />
       )}
-    </div>
+      </div>
+    </AppLayout>
   );
 }
