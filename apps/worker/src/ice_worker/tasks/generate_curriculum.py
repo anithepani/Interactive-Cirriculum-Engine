@@ -69,36 +69,6 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         curriculum_id, tenant_id, "audio", ingest["s3_key"]
     )
     audio_path = ingest["audio_path"]
-    
-    # ─── Upload source video to S3 ─────────────────────────────────────────
-    s3 = get_s3_client()
-    video_path = ingest.get("video_path")
-    if not video_path or not os.path.exists(video_path):
-        video_path = audio_path.replace(".wav", ".mp4")
-        if not os.path.exists(video_path):
-            video_path = audio_path.replace(".wav", ".webm")
-            
-    if video_path and os.path.exists(video_path):
-        ext = os.path.splitext(video_path)[1]
-        content_type = "video/mp4" if ext == ".mp4" else "video/webm"
-        video_s3_key = f"tenants/{tenant_id}/curricula/{curriculum_id}/video{ext}"
-        
-        s3.upload_file(
-            video_path,
-            settings.s3.bucket,
-            video_s3_key,
-            ExtraArgs={'ContentType': content_type}
-        )
-        
-        await persist.save_artifact(
-            curriculum_id, tenant_id, "video", video_s3_key
-        )
-        
-        # Clean up video file after upload
-        with contextlib.suppress(OSError):
-            os.remove(video_path)
-    else:
-        logger.warning("Source video file not found; skipping video artifact upload.")
 
     # ---- M2: transcribe (faster-whisper, tiny / cpu / int8) ----
     from ice_transcript import transcribe
@@ -215,7 +185,7 @@ def generate_curriculum(
         curriculum_id, video_ref, tenant_id,
     )
     # Drop any engine singleton from a previous asyncio.run in this worker
-    # process — its asyncpg pool is bound to a now-closed event loop.
+    # process — its asyncpg pool is bound to a now-closed event loop.   
     reset_engine()
     asyncio.run(_run_with_failover(curriculum_id, video_ref, tenant_id))
     return curriculum_id
