@@ -32,6 +32,7 @@ export interface CurriculumDetail {
   status: string;
   recap_status?: "none" | "processing" | "ready" | "failed";
   recap_url?: string | null;
+  recap_transcript_html?: string | null;
   created_at?: string;
   ready_at?: string;
   segments: Segment[];

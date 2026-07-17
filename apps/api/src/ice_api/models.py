@@ -84,6 +84,7 @@ class Curriculum(Base):
     # recap_status: none | processing | ready | failed
     recap_status = Column(String, nullable=False, server_default="none", default="none")
     recap_url = Column(String, nullable=True)   # presigned S3 URL once ready
+    recap_transcript_html = Column(Text, nullable=True) # HTML string for Study Guide
 
 class Segment(Base):
     __tablename__ = "segments"

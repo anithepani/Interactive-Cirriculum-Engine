@@ -11,7 +11,7 @@ dependencies = [
     "ice-ingestion", "ice-transcript", "ice-vision", "ice-segmentation",
     "ice-concept-graph", "ice-checkpoints", "ice-exercise-gen",
     "ice-test-gen", "ice-evaluation", "ice-adaptive", "ice-progress", "ice-llm",
-    "sentence-transformers>=2.0.0",
+    "google-generativeai>=0.5.0",
 ]
 
 [build-system]
