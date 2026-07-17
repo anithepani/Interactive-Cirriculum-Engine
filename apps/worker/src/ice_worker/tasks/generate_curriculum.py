@@ -68,6 +68,10 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     await persist.save_artifact(
         curriculum_id, tenant_id, "audio", ingest["s3_key"]
     )
+    if "s3_video_key" in ingest:
+        await persist.save_artifact(
+            curriculum_id, tenant_id, "video", ingest["s3_video_key"]
+        )
     audio_path = ingest["audio_path"]
 
     # ---- M2: transcribe (faster-whisper, tiny / cpu / int8) ----
