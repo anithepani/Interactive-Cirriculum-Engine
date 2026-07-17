@@ -94,6 +94,17 @@ def _upload_wav(wav_path: str, tenant_id: Any, curriculum_id: Any) -> str:
     return key
 
 
+def _upload_video(video_path: str, tenant_id: Any, curriculum_id: Any) -> str:
+    """Upload the source video to MinIO."""
+    s3 = get_s3_client()
+    ext = os.path.splitext(video_path)[1]
+    key = f"{tenant_prefix(tenant_id)}curricula/{curriculum_id}/source_video{ext}"
+    bucket = settings.s3.bucket
+    s3.upload_file(video_path, bucket, key)
+    logger.info("uploaded video -> s3://%s/%s", bucket, key)
+    return key
+
+
 def ingest(
     video_ref: str,
     tenant_id: Any,
@@ -123,6 +134,7 @@ def ingest(
         wav_path = os.path.join(tmp, "audio.wav")
         _to_wav(src, wav_path)
         s3_key = _upload_wav(wav_path, tenant_id, curriculum_id)
+        s3_video_key = _upload_video(src, tenant_id, curriculum_id)
         # M2 (faster-whisper) reads from a local path. Copy the WAV to a stable
         # temp path outside the context manager so it survives this call.
         stable_name = os.path.join(
@@ -142,6 +154,7 @@ def ingest(
             "audio_path": stable_name,
             "video_path": stable_video_name,
             "s3_key": s3_key,
+            "s3_video_key": s3_video_key,
             "title": title,
             "duration_sec": duration,
             "language_hint": language_hint,
