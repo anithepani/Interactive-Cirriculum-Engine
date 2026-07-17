@@ -417,3 +417,31 @@ async def refresh_token(
 
     access_token = create_access_token({"sub": str(user.id)})
     return {"access_token": access_token}
+
+class UpdateMeRequest(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    current_password: str | None = None
+    new_password: str | None = Field(None, min_length=8)
+
+@router.put("/me")
+async def update_me(
+    data: UpdateMeRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session)
+):
+    if data.new_password:
+        if not data.current_password:
+            raise HTTPException(status_code=400, detail="Current password is required to set a new password")
+        if not current_user.password_hash or not verify_password(data.current_password, current_user.password_hash):
+            raise HTTPException(status_code=400, detail="Current password is incorrect")
+            
+        current_user.password_hash = hash_password(data.new_password)
+        
+    current_user.name = sanitize_input(data.name)
+    
+    session.add(current_user)
+    await session.commit()
+    await session.refresh(current_user)
+    
+    return _user_dict(current_user)
+

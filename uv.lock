@@ -1605,6 +1605,7 @@ dependencies = [
     { name = "ice-test-gen" },
     { name = "ice-transcript" },
     { name = "ice-vision" },
+    { name = "sentence-transformers" },
 ]
 
 [package.metadata]
@@ -1626,6 +1627,7 @@ requires-dist = [
     { name = "ice-test-gen", editable = "libs/ai/test_gen" },
     { name = "ice-transcript", editable = "libs/ai/transcript" },
     { name = "ice-vision", editable = "libs/ai/vision" },
+    { name = "sentence-transformers", specifier = ">=2.0.0" },
 ]
 
 [[package]]

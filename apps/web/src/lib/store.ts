@@ -22,3 +22,15 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   closeExercise: () => set({ isExerciseOpen: false }),
   reset: () => set({ currentCheckpointIndex: 0, answers: {}, isExerciseOpen: false }),
 }));
+
+interface LayoutState {
+  isSidebarCollapsed: boolean;
+  toggleSidebar: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
+}
+
+export const useLayoutStore = create<LayoutState>((set) => ({
+  isSidebarCollapsed: false,
+  toggleSidebar: () => set((state) => ({ isSidebarCollapsed: !state.isSidebarCollapsed })),
+  setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
+}));

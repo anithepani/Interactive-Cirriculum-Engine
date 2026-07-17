@@ -11,6 +11,10 @@ import ExerciseModal from "@/components/ExerciseModal";
 import VideoProgressBar, { StatusMap } from "@/components/VideoProgressBar";
 import CheckpointDonut from "@/components/CheckpointDonut";
 import { authFetcher, authFetch } from "@/lib/auth";
+import RecapPlayer from "@/components/RecapPlayer";
+import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
+import AppLayout from "@/components/layout/AppLayout";
 
 const fetcher = authFetcher;
 
@@ -35,7 +39,7 @@ export default function CurriculumPage() {
   const { data, error, mutate } = useSWR<CurriculumDetail>(
     id ? `/api/v1/curricula/${id}` : null,
     fetcher,
-    { refreshInterval: (latest) => (latest && (latest.status === "ready" || latest.status === "failed") ? 0 : 5000) }
+    { refreshInterval: (latest) => (latest && (latest.status === "processing" || latest.status === "queued" || latest.recap_status === "processing") ? 5000 : 0) }
   );
 
   const [selectedExercise, setSelectedExercise] = useState<ExercisePayload | null>(null);
@@ -155,15 +159,27 @@ export default function CurriculumPage() {
     lastTimeRef.current = 0;
   };
 
-  if (error) return <div className="glass p-6">Failed to load curriculum: {(error as Error).message}</div>;
-  if (!data) return <div className="glass p-6"><LoadingSpinner /></div>;
+  if (error) return (
+    <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700">
+        <span className="font-semibold">Failed to load curriculum:</span> {(error as Error).message}
+      </div>
+    </div>
+  );
+  if (!data) return (
+    <div className="flex min-h-[60vh] items-center justify-center">
+      <LoadingSpinner size={36} />
+    </div>
+  );
 
   if (data.status === "queued" || data.status === "processing") {
     return (
-      <div className="glass p-8 text-center">
-        <h2 className="text-2xl font-semibold">Generating curriculum…</h2>
-        <p className="mt-2 text-gray-300">This may take a minute.</p>
-        <div className="mt-6 mx-auto w-20"><LoadingSpinner size={32} /></div>
+      <div className="mx-auto max-w-4xl px-6 py-10">
+        <div className="flex flex-col items-center gap-6 rounded-[2rem] border border-ink/10 bg-white py-20 text-center shadow-sm">
+          <h2 className="font-display text-2xl font-bold text-ink">Generating curriculum…</h2>
+          <p className="text-sm text-ink-soft">This may take a minute.</p>
+          <LoadingSpinner size={32} />
+        </div>
       </div>
     );
   }
@@ -172,12 +188,23 @@ export default function CurriculumPage() {
   const videoId = getYouTubeId(videoUrl);
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="glass rounded-2xl p-6">
+    <AppLayout>
+      <div className="space-y-6 px-6 py-8 mx-auto max-w-5xl">
+        <div className="flex items-center mb-2">
+        <Link 
+          href="/dashboard"
+          className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-ink shadow-sm ring-1 ring-inset ring-ink/10 transition hover:bg-indigo-50 hover:text-indigo-600 hover:ring-indigo-200"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Dashboard
+        </Link>
+      </div>
+      
+      <div className="rounded-[2rem] border border-ink/10 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-semibold">{data.title}</h1>
-            <p className="text-sm text-gray-300">Status: {data.status}</p>
+            <h1 className="font-display text-2xl font-bold text-ink">{data.title}</h1>
+            <p className="mt-1 text-sm text-ink-soft">Status: {data.status}</p>
           </div>
           <CheckpointDonut checkpoints={checkpoints} statusMap={statusMap} />
         </div>
@@ -258,6 +285,22 @@ export default function CurriculumPage() {
           statusMap={statusMap}
           onMarkerClick={(index) => openExerciseModal(checkpoints[index], index)}
         />
+        
+        <RecapPlayer
+          curriculumId={data.id}
+          recapStatus={data.recap_status || "none"}
+          recapUrl={data.recap_url ?? null}
+          onTrigger={async () => {
+            try {
+              const res = await authFetch(`/api/v1/curricula/${data.id}/recap`, { method: "POST" });
+              if (!res.ok) throw new Error("Failed to trigger recap");
+              mutate();
+            } catch (err) {
+              console.error(err);
+              alert("Failed to start recap generation.");
+            }
+          }}
+        />
       </div>
 
       {isExerciseOpen && selectedExercise && (
@@ -286,6 +329,7 @@ export default function CurriculumPage() {
           }}
         />
       )}
-    </div>
+      </div>
+    </AppLayout>
   );
 }

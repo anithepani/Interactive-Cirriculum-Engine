@@ -29,10 +29,10 @@ celery_app.conf.update(
     enable_utc=True,
     task_track_started=True,
     task_acks_late=True,                 # requeue on worker crash
-    worker_prefetch_multiplier=1,       # fair scheduling for long tasks
+    worker_prefetch_multiplier=1,        # fair scheduling for long tasks
     task_default_retry_delay=30,
     task_default_max_retries=3,
-    task_time_limit=1800,               # 30 min hard cap per task
+    task_time_limit=1800,                # 30 min hard cap per task
     task_soft_time_limit=1500,
     task_annotations={
         "ice_worker.tasks.transcribe.*": {"rate_limit": "1/m"},   # GPU bound
@@ -40,9 +40,17 @@ celery_app.conf.update(
     },
 )
 
-# Auto-discover task modules:
+# ─── Explicit task registration ──────────────────────────────────────────────
+# Even if autodiscover fails, these imports force the task definitions to be
+# evaluated and registered with Celery.
+from ice_worker.tasks.generate_curriculum import generate_curriculum  # noqa: F401
+from ice_worker.tasks.recap import generate_recap                    # noqa: F401
+
+# Auto-discover task modules (fallback; explicit imports above are the
+# primary registration mechanism).
 celery_app.autodiscover_tasks([
     "ice_worker.tasks.generate_curriculum",
+    "ice_worker.tasks.recap",
 ])
 
 

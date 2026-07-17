@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from ice_shared.db import get_session, set_tenant_context
 from ice_api.auth_utils import get_current_user
 from ice_api.models import Curriculum, Tenant, Segment, Concept, Checkpoint, Exercise, User
-from ice_api.process import process_video
+from ice_api.process import process_video, trigger_recap
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,7 @@ async def list_curricula(
             "id": c.id,
             "title": c.title,
             "status": c.status,
+            "recap_status": c.recap_status,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "ready_at": c.ready_at.isoformat() if c.ready_at else None,
         }
@@ -159,6 +160,63 @@ async def evaluate(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/{curriculum_id}/recap")
+async def generate_recap(
+    curriculum_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        tenant_id = current_user.tenant_id
+        set_tenant_context(str(tenant_id))
+
+        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        result = await session.execute(stmt)
+        curriculum = result.scalar_one_or_none()
+        if not curriculum:
+            raise HTTPException(status_code=404, detail="Curriculum not found")
+
+        if curriculum.recap_status == "processing":
+            raise HTTPException(status_code=409, detail="Recap is already generating")
+            
+        curriculum.recap_status = "processing"
+        await session.commit()
+
+        # Dispatch background task
+        asyncio.create_task(trigger_recap(curriculum.id, tenant_id))
+
+        return {"status": "processing"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in generate_recap: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{curriculum_id}")
+async def delete_curriculum(
+    curriculum_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        tenant_id = current_user.tenant_id
+        set_tenant_context(str(tenant_id))
+
+        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        result = await session.execute(stmt)
+        curriculum = result.scalar_one_or_none()
+        if not curriculum:
+            raise HTTPException(status_code=404, detail="Curriculum not found")
+
+        await session.delete(curriculum)
+        await session.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error deleting curriculum: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{curriculum_id}", response_model=Dict[str, Any])
 async def get_curriculum(
     curriculum_id: int,
@@ -203,6 +261,8 @@ async def get_curriculum(
             "title": curriculum.title,
             "created_at": curriculum.created_at.isoformat() if curriculum.created_at else None,
             "status": curriculum.status,
+            "recap_status": curriculum.recap_status,
+            "recap_url": curriculum.recap_url,
             "ready_at": curriculum.ready_at.isoformat() if curriculum.ready_at else None,
             "video_url": curriculum.source_ref,
             "segments": [

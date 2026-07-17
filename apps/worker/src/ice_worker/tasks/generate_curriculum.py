@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import os
 import sys
+import tempfile
 from typing import Any
 
 from ice_shared import settings
 from ice_shared.db import Base, get_engine, reset_engine, set_tenant_context
+from ice_shared.s3 import get_s3_client
 
 from ice_worker import persist
 from ice_worker.celery_app import celery_app
@@ -72,13 +75,30 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     from ice_transcript import transcribe
 
     transcript = transcribe(audio_path)
+
+    # ─── Upload transcript JSON to S3 ─────────────────────────────────────────
+    s3 = get_s3_client()
+    s3_key = f"tenants/{tenant_id}/curricula/{curriculum_id}/transcript.json"
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(transcript, f)
+        f.flush()
+        s3.upload_file(
+            f.name,
+            settings.s3.bucket,
+            s3_key,
+            ExtraArgs={'ContentType': 'application/json'}
+        )
+        os.unlink(f.name)  # clean up
+
+    # Save artifact record
     await persist.save_artifact(
         curriculum_id,
         tenant_id,
         "transcript",
-        f"tenants/{tenant_id}/curricula/{curriculum_id}/transcript.json",
+        s3_key,
         meta={"language": transcript.get("language")},
     )
+
     with contextlib.suppress(OSError):
         os.remove(audio_path)
 

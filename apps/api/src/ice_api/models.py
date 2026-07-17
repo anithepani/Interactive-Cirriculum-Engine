@@ -80,6 +80,10 @@ class Curriculum(Base):
     duration = Column(Float, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     ready_at = Column(DateTime, nullable=True)
+    # ── Recap Video feature ──────────────────────────────────────────────
+    # recap_status: none | processing | ready | failed
+    recap_status = Column(String, nullable=False, server_default="none", default="none")
+    recap_url = Column(String, nullable=True)   # presigned S3 URL once ready
 
 class Segment(Base):
     __tablename__ = "segments"
