@@ -263,6 +263,7 @@ async def get_curriculum(
             "status": curriculum.status,
             "recap_status": curriculum.recap_status,
             "recap_url": curriculum.recap_url,
+            "recap_transcript_html": curriculum.recap_transcript_html,
             "ready_at": curriculum.ready_at.isoformat() if curriculum.ready_at else None,
             "video_url": curriculum.source_ref,
             "segments": [
