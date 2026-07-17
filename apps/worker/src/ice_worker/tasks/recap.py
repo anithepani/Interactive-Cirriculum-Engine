@@ -26,19 +26,12 @@ from ice_worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
+import math
+# sentence-transformers removed
+
 # Windows asyncio fix
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-_embedder: SentenceTransformer | None = None
-
-
-def _get_embedder() -> SentenceTransformer:
-    global _embedder
-    if _embedder is None:
-        logger.info("Loading sentence-transformers all-MiniLM-L6-v2")
-        _embedder = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedder
 
 
 async def _ensure_tables() -> None:
@@ -86,17 +79,24 @@ async def _run_recap(curriculum_id_str: str, tenant_id: str) -> None:
             if not video_art:
                 raise ValueError("No video or audio artifact found")
 
-            # Curriculum duration
+            # Curriculum duration & Logarithmic Budget Math
             curriculum = await session.get(Curriculum, curriculum_id)
             video_duration = curriculum.duration if curriculum and curriculum.duration else 0
-            target_duration = min(300, max(60, video_duration * 0.7))
-            logger.info(f"Target recap duration: {target_duration:.1f}s")
+            
+            duration_mins = video_duration / 60.0
+            if duration_mins < 1: duration_mins = 1.0
+            target_duration_mins = min(1.0 + 0.5 * math.log(duration_mins), 3.5)
+            target_duration = target_duration_mins * 60.0
+            
+            total_word_budget = target_duration_mins * 140
+            total_sentence_budget = int(total_word_budget / 14)
+            logger.info(f"Target recap: {target_duration_mins:.2f} mins. Sentence Budget: {total_sentence_budget}")
 
-            # Concepts
+            # Concepts (still fetched, but used in LLM prompt)
             conc_stmt = select(Concept).where(Concept.curriculum_id == curriculum_id)
             concepts = (await session.execute(conc_stmt)).scalars().all()
             if not concepts:
-                raise ValueError("No concepts found")
+                logger.warning("No concepts found, proceeding with LLM extraction anyway")
 
         s3 = get_s3_client()
 
@@ -209,68 +209,190 @@ async def _run_recap(curriculum_id_str: str, tenant_id: str) -> None:
         if not sentences:
             raise ValueError("No sentences extracted")
 
-        # ---- Embedding & scoring ----
-        embedder = _get_embedder()
-        concept_texts = [c.label + " " + (c.description or "") for c in concepts]
-        concept_embeddings = embedder.encode(concept_texts, convert_to_tensor=True)
+        # ---- LLM Embedding & scoring (Gemini) ----
+        import google.generativeai as genai
+        
+        gemini_api_key = os.environ.get("GEMINI_API_KEY")
+        if not gemini_api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is not set")
+            
+        genai.configure(api_key=gemini_api_key)
+        
+        # Find an available model
+        available_models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
+        
+        target_model = None
+        for preferred in ["models/gemini-3.1-flash-lite", "models/gemini-3.5-flash", "models/gemini-3.1-pro-preview", "models/gemini-flash-latest"]:
+            if preferred in available_models:
+                target_model = preferred.replace("models/", "")
+                break
+                
+        if not target_model:
+            target_model = available_models[0].replace("models/", "")
+            
+        try:
+            model = genai.GenerativeModel(target_model, generation_config={"response_mime_type": "application/json"})
+        except Exception:
+            # Fallback if mime_type is not supported on this model
+            model = genai.GenerativeModel(target_model)
+        
+        concept_texts = "\n".join([f"- {c.label}: {c.description}" for c in concepts])
+        
+        prompt = f"""You are an expert video editor. I have a transcript of an educational video.
+I need you to select the best sentences to create a summary recap.
+Total Sentence Budget: {total_sentence_budget} sentences maximum.
 
-        sentence_texts = [s["text"] for s in sentences]
-        sentence_embeddings = embedder.encode(sentence_texts, convert_to_tensor=True)
+Core Concepts to target:
+{concept_texts}
 
-        from sentence_transformers.util import cos_sim
-        similarities = cos_sim(sentence_embeddings, concept_embeddings)
-        max_sims = similarities.max(dim=1).values.tolist()
-        for idx, score in enumerate(max_sims):
-            sentences[idx]["score"] = score
+Score each segment based on:
+1. Concept Density (40%): introduces core definitions or logic.
+2. Structural Signposts (30%): "Crucially", "The takeaway is", etc.
+3. Code Relevance (20%): directly explains coding logic.
+4. Acoustic Continuity (10%): complete thoughts without mid-phrase cuts.
 
-        # Greedy selection up to target_duration
-        sentences_sorted_by_score = sorted(sentences, key=lambda x: x["score"], reverse=True)
+Select the best segments that fit within the sentence budget.
+Return a JSON object with EXACTLY this format (do not wrap in markdown blocks, just the JSON):
+{{
+  "summary": "A 2-3 sentence engaging summary of what this recap covers.",
+  "segments": [
+    {{"start": 12.5, "end": 24.0, "reason": "Introduces core definition"}}
+  ]
+}}
+
+Here is the transcript data:
+"""
+        transcript_subset = [{"id": i, "start": s["start"], "end": s["end"], "text": s["text"]} for i, s in enumerate(sentences)]
+        transcript_json = json.dumps(transcript_subset)
+        
+        logger.info(f"Sending {len(transcript_subset)} sentences to Gemini model {target_model}")
+        try:
+            response = model.generate_content(prompt + transcript_json)
+            clean_text = response.text.strip()
+            if clean_text.startswith("```json"):
+                clean_text = clean_text[7:]
+            elif clean_text.startswith("```"):
+                clean_text = clean_text[3:]
+            if clean_text.endswith("```"):
+                clean_text = clean_text[:-3]
+            llm_result = json.loads(clean_text.strip())
+            llm_summary = llm_result.get("summary", "Recap summary")
+            llm_selected = llm_result.get("segments", [])
+        except Exception as e:
+            logger.error(f"Failed to parse LLM response: {e}")
+            raise ValueError("LLM generation failed or returned invalid JSON")
+            
         selected = []
         total_dur = 0.0
-        for s in sentences_sorted_by_score:
-            if total_dur + s["duration"] > target_duration:
+        for choice in llm_selected:
+            start = float(choice["start"])
+            end = float(choice["end"])
+            dur = end - start
+            if total_dur + dur > target_duration:
                 break
-            selected.append(s)
-            total_dur += s["duration"]
-
+            selected.append({"start": start, "end": end, "duration": dur})
+            total_dur += dur
+            
         selected.sort(key=lambda x: x["start"])
 
         if not selected:
             raise ValueError("No sentences selected for recap")
+
+        # ---- Generate HTML Document ----
+        html_output = ["<div class='transcript-container'>"]
+        html_output.append(f"<div class='recap-summary'><h3 class='font-bold text-lg mb-2'>Summary</h3><p>{llm_summary}</p></div>")
+        html_output.append("<div class='recap-transcript'>")
+        
+        for segment in transcript_subset:
+            start = segment['start']
+            end = segment['end']
+            text = segment['text']
             
-        if total_dur < 30.0:
-            logger.warning(f"Selected recap duration ({total_dur:.1f}s) is shorter than 30s")
+            is_highlighted = False
+            for chosen in selected:
+                if start >= (chosen['start'] - 0.1) and end <= (chosen['end'] + 0.1):
+                    is_highlighted = True
+                    break
+                    
+            if is_highlighted:
+                html_output.append(f"<mark class='recap-highlight' title='Included in Recap'>{text}</mark> ")
+            else:
+                html_output.append(f"<span>{text}</span> ")
+                
+        html_output.append("</div></div>")
+        final_html = "".join(html_output)
+        
+        # Save HTML to database
+        factory = get_session_factory()
+        async with factory() as session:
+            c = await session.get(Curriculum, curriculum_id)
+            if c:
+                c.recap_transcript_html = final_html
+                await session.commit()
 
-        # ---- FFmpeg extraction ----
-        concat_list_path = os.path.join(tmpdir, "concat.txt")
-        clips = []
 
+        # ---- FFmpeg extraction and stitching (Optimized Multiple-Input Filtergraph) ----
+        output_path = os.path.join(tmpdir, "recap.mp4")
+        
+        # Check if the source actually has a video track (since audio-only uploads are supported)
+        probe_cmd = ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "json", video_path]
+        try:
+            probe_res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, text=True, check=True)
+            probe_data = json.loads(probe_res.stdout)
+            has_video = any(s.get("codec_type") == "video" for s in probe_data.get("streams", []))
+        except Exception as e:
+            logger.warning(f"Failed to probe video streams: {e}. Defaulting to has_video=True")
+            has_video = True
+            
+        cmd = ["ffmpeg", "-y"]
+        filter_complex = []
+        
         for i, s in enumerate(selected):
-            clip_path = os.path.join(tmpdir, f"clip_{i}.mp4")
             start_t = max(0, s["start"] - 0.2)
             dur = (s["end"] - s["start"]) + 0.4
+            
+            # Instant input seeking
+            cmd.extend(["-ss", str(start_t), "-t", str(dur), "-i", video_path])
+            
+            fade_out_start = max(0.1, dur - 0.3)
+            # Apply asetpts FIRST so the afade timestamps align perfectly
+            a_part = f"[{i}:a]asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.3,afade=t=out:st={fade_out_start:.2f}:d=0.3[a{i}]"
+            filter_complex.append(a_part)
+            
+            if has_video:
+                v_part = f"[{i}:v]setpts=PTS-STARTPTS[v{i}]"
+                filter_complex.append(v_part)
 
-            cmd = [
-                "ffmpeg", "-y", "-ss", str(start_t), "-i", video_path,
-                "-t", str(dur),
+        if has_video:
+            concat_inputs = "".join([f"[v{i}][a{i}]" for i in range(len(selected))])
+            concat_filter = f"{concat_inputs}concat=n={len(selected)}:v=1:a=1[outv][outa]"
+            filter_complex.append(concat_filter)
+            
+            cmd.extend([
+                "-filter_complex", ";".join(filter_complex),
+                "-map", "[outv]", "-map", "[outa]",
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                 "-c:a", "aac", "-b:a", "128k",
-                "-avoid_negative_ts", "make_zero",
-                clip_path
-            ]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            clips.append(clip_path)
-
-        with open(concat_list_path, "w", encoding="utf-8") as f:
-            for c in clips:
-                f.write(f"file '{os.path.basename(c)}'\n")
-
-        output_path = os.path.join(tmpdir, "recap.mp4")
-        concat_cmd = [
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", concat_list_path, "-c", "copy", output_path
-        ]
-        subprocess.run(concat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+                output_path
+            ])
+        else:
+            concat_inputs = "".join([f"[a{i}]" for i in range(len(selected))])
+            concat_filter = f"{concat_inputs}concat=n={len(selected)}:v=0:a=1[outa]"
+            filter_complex.append(concat_filter)
+            
+            cmd.extend([
+                "-filter_complex", ";".join(filter_complex),
+                "-map", "[outa]",
+                "-c:a", "aac", "-b:a", "128k",
+                output_path
+            ])
+        
+        logger.info(f"Running FFmpeg filtergraph (has_video={has_video})...")
+        try:
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True)
+        except subprocess.CalledProcessError as e:
+            logger.error(f"FFmpeg failed with exit code {e.returncode}.\nStderr: {e.stderr}")
+            raise RuntimeError(f"FFmpeg failed: {e.stderr}")
 
         # ---- Upload to S3 ----
         s3_key = f"{tenant_prefix(tenant_id)}curricula/{curriculum_id}/recap.mp4"
