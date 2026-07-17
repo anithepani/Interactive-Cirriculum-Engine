@@ -135,6 +135,7 @@ async def persist_segments(
                 structuredness=seg.get("structuredness"),
                 topic_label=seg.get("topic_label"),
                 confidence=seg.get("confidence"),
+                source_frames=seg.get("source_frames", []),
             )
             session.add(row)
             await session.flush()

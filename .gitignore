@@ -81,3 +81,9 @@ long_video_*.json
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# ---- M3 vision prototype artifacts (do not track) ----
+vision_pipeline/output/
+vision_pipeline/input/
+m3_visual_extraction/output/
+m3_visual_extraction/__pycache__/

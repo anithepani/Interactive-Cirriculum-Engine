@@ -113,7 +113,7 @@ def ingest(
     """Download + demux + WAV + upload. Returns metadata for M2 + DB.
 
     Returns:
-        {"audio_path": str, "s3_key": str, "title": str,
+        {"video_path": str, "audio_path": str, "s3_key": str, "title": str,
          "duration_sec": float, "language_hint": str}
     """
     info = _probe(video_ref)
@@ -137,22 +137,22 @@ def ingest(
         s3_video_key = _upload_video(src, tenant_id, curriculum_id)
         # M2 (faster-whisper) reads from a local path. Copy the WAV to a stable
         # temp path outside the context manager so it survives this call.
-        stable_name = os.path.join(
+        stable_audio_name = os.path.join(
             tempfile.gettempdir(), f"ice_audio_{os.getpid()}.wav"
         )
-        shutil.copy(wav_path, stable_name)
-        logger.info("audio ready for ASR: %s", stable_name)
-        
-        # Also copy the video so generate_curriculum can upload it
+        shutil.copy(wav_path, stable_audio_name)
+        logger.info("audio ready for ASR: %s", stable_audio_name)
+
+        # M3 (vision) needs the video. Copy the source video too.
         ext = os.path.splitext(src)[1]
         stable_video_name = os.path.join(
             tempfile.gettempdir(), f"ice_video_{os.getpid()}{ext}"
         )
         shutil.copy(src, stable_video_name)
-        
+        logger.info("video ready for Vision: %s", stable_video_name)
         return {
-            "audio_path": stable_name,
             "video_path": stable_video_name,
+            "audio_path": stable_audio_name,
             "s3_key": s3_key,
             "s3_video_key": s3_video_key,
             "title": title,
