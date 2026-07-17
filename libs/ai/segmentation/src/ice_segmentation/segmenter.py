@@ -24,6 +24,8 @@ from typing import Any
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
+from ice_contracts.visual import VisualItem, VisualRegionType
+
 logger = logging.getLogger(__name__)
 
 # ---- Config -------------------------------------------------------------
@@ -68,13 +70,14 @@ def _cosine_similarity_matrix(embeddings: np.ndarray) -> np.ndarray:
 # ---- Boundary detection (step c) ----------------------------------------
 
 
-def _find_boundaries(adjacent_sims: np.ndarray) -> list[int]:
+def _find_boundaries(adjacent_sims: np.ndarray, sentences: list[dict], visual_items: list[VisualItem] | None = None) -> list[int]:
     """Return indices (into the sentence list) where a new segment starts.
 
     A boundary is placed after sentence *i* when the similarity between
     sentence *i* and *i+1* drops below a dynamic threshold, defined as
     `mean - 1*std` of the adjacent similarities, clamped to a floor so
     very coherent text doesn't fragment spuriously.
+    If a slide change is detected between sentences, a hard boundary is placed.
     """
     if len(adjacent_sims) < 2:
         return []
@@ -84,7 +87,17 @@ def _find_boundaries(adjacent_sims: np.ndarray) -> list[int]:
 
     boundaries: list[int] = []  # sentence index where a new segment begins
     for i, sim in enumerate(adjacent_sims):
-        if sim < threshold:
+        force_boundary = False
+        if visual_items:
+            # Check for slide changes in this gap
+            end_t = sentences[i]["end"]
+            start_t = sentences[i+1]["start"]
+            for v in visual_items:
+                if v.type == VisualRegionType.SLIDE and end_t <= v.ts <= start_t:
+                    force_boundary = True
+                    break
+
+        if sim < threshold or force_boundary:
             boundaries.append(i + 1)  # new segment starts at i+1
     return boundaries
 
@@ -326,18 +339,20 @@ def _structuredness(embeddings: np.ndarray) -> float:
 # ---- Main entry point ---------------------------------------------------
 
 
-def segment_transcript(transcript_dict: dict) -> list[dict]:
+def segment_transcript(transcript_dict: dict, visual_items: list[VisualItem] | None = None) -> list[dict]:
     """Segment a canonical transcript dict into ordered topic segments.
 
     Args:
         transcript_dict: the canonical transcript JSON produced by
             ``ice_transcript.transcribe()`` — must contain ``segments``
             with ``text``, ``start``, ``end``, and ``words``.
+        visual_items: Optional extracted visual elements (M3).
 
     Returns:
         A list of segment dicts, each with keys: ``id`` (int, sequential),
         ``start`` (float), ``end`` (float), ``title`` (str), ``summary``
-        (str), ``concepts`` (list[str]), ``structuredness`` (float 0-1).
+        (str), ``concepts`` (list[str]), ``structuredness`` (float 0-1),
+        ``source_frames`` (list[int]).
     """
     raw_segments = transcript_dict.get("segments", [])
     if not raw_segments:
@@ -376,7 +391,7 @@ def segment_transcript(transcript_dict: dict) -> list[dict]:
             [float(np.dot(normed[i], normed[i + 1]))
              for i in range(len(normed) - 1)]
         )
-        boundaries = _find_boundaries(adjacent_sims)
+        boundaries = _find_boundaries(adjacent_sims, sentences, visual_items)
     else:
         boundaries = []
 
@@ -408,9 +423,25 @@ def segment_transcript(transcript_dict: dict) -> list[dict]:
         start = seg_sentences[0]["start"]
         end = seg_sentences[-1]["end"]
 
+        # Fuse visual items
+        seg_source_frames = []
+        nudge = 0.0
+        if visual_items:
+            for v in visual_items:
+                if start <= v.ts <= end:
+                    seg_source_frames.append(v.frame_idx)
+                    if v.type == VisualRegionType.CODE and v.text.strip():
+                        seg_text += f"\n\n[Code Block]:\n{v.text}"
+                    elif v.type in (VisualRegionType.DIAGRAM, VisualRegionType.UI):
+                        nudge += 0.1
+
+            seg_source_frames = sorted(list(set(seg_source_frames)))
+
         title, summary = _llm_title_summary(seg_text)
         concepts = _llm_extract_concepts(seg_text)
-        structuredness = _structuredness(seg_embeddings)
+        
+        base_struct = _structuredness(seg_embeddings)
+        structuredness = min(1.0, base_struct + nudge)
 
         results.append(
             {
@@ -422,6 +453,7 @@ def segment_transcript(transcript_dict: dict) -> list[dict]:
                 "concepts": concepts,
                 "structuredness": round(structuredness, 4),
                 "topic_label": topic_labels[idx],
+                "source_frames": seg_source_frames,
             }
         )
 

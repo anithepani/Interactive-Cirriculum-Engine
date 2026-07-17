@@ -52,11 +52,11 @@ def _probe(url: str) -> dict[str, Any]:
     return info or {}
 
 
-def _download_audio(url: str, out_dir: str) -> str:
-    """Download the best-audio stream; return the path to the downloaded file."""
+def _download_media(url: str, out_dir: str) -> str:
+    """Download the best video+audio stream; return the path to the downloaded file."""
     outtmpl = os.path.join(out_dir, "source.%(ext)s")
     opts = {
-        "format": "bestaudio/best",
+        "format": "bestvideo+bestaudio/best",
         "outtmpl": outtmpl,
         "quiet": True,
         "no_warnings": True,
@@ -102,7 +102,7 @@ def ingest(
     """Download + demux + WAV + upload. Returns metadata for M2 + DB.
 
     Returns:
-        {"audio_path": str, "s3_key": str, "title": str,
+        {"video_path": str, "audio_path": str, "s3_key": str, "title": str,
          "duration_sec": float, "language_hint": str}
     """
     info = _probe(video_ref)
@@ -119,19 +119,29 @@ def ingest(
         )
 
     with tempfile.TemporaryDirectory(prefix="ice_ingest_") as tmp:
-        src = _download_audio(video_ref, tmp)
+        src = _download_media(video_ref, tmp)
         wav_path = os.path.join(tmp, "audio.wav")
         _to_wav(src, wav_path)
         s3_key = _upload_wav(wav_path, tenant_id, curriculum_id)
         # M2 (faster-whisper) reads from a local path. Copy the WAV to a stable
         # temp path outside the context manager so it survives this call.
-        stable_name = os.path.join(
+        stable_audio_name = os.path.join(
             tempfile.gettempdir(), f"ice_audio_{os.getpid()}.wav"
         )
-        shutil.copy(wav_path, stable_name)
-        logger.info("audio ready for ASR: %s", stable_name)
+        shutil.copy(wav_path, stable_audio_name)
+        
+        # M3 (vision) needs the video. Copy the source video too.
+        ext = os.path.splitext(src)[1]
+        stable_video_name = os.path.join(
+            tempfile.gettempdir(), f"ice_video_{os.getpid()}{ext}"
+        )
+        shutil.copy(src, stable_video_name)
+
+        logger.info("audio ready for ASR: %s", stable_audio_name)
+        logger.info("video ready for Vision: %s", stable_video_name)
         return {
-            "audio_path": stable_name,
+            "video_path": stable_video_name,
+            "audio_path": stable_audio_name,
             "s3_key": s3_key,
             "title": title,
             "duration_sec": duration,

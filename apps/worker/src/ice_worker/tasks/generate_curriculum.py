@@ -66,6 +66,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         curriculum_id, tenant_id, "audio", ingest["s3_key"]
     )
     audio_path = ingest["audio_path"]
+    video_path = ingest["video_path"]
 
     # ---- M2: transcribe (faster-whisper, tiny / cpu / int8) ----
     from ice_transcript import transcribe
@@ -80,10 +81,26 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     )
     with contextlib.suppress(OSError):
         os.remove(audio_path)
+
+    # ---- M3: extract visuals (fallback to transcript-only on failure) ----
+    visual_items = []
+    try:
+        from ice_vision import extract_visuals
+        loop = asyncio.get_running_loop()
+        visual_items = await loop.run_in_executor(
+            None,
+            lambda: extract_visuals(video_path, extract_rate_sec=settings.vision.extract_rate_sec)
+        )
+    except Exception as e:
+        logger.warning(f"M3 Visual Extraction failed: {e}. Falling back to transcript-only mode.")
+
+    with contextlib.suppress(OSError):
+        os.remove(video_path)
+
     # ---- M4: segment transcript ----
     from ice_segmentation import segment_transcript
 
-    segments = segment_transcript(transcript)
+    segments = segment_transcript(transcript, visual_items=visual_items)
     seg_map = await persist.persist_segments(curriculum_id, tenant_id, segments)
 
     # ---- M5: concept graph ----

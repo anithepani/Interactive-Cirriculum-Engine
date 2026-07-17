@@ -78,8 +78,18 @@ class _ASR(BaseSettings):
 
 class _OCR(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="OCR_")
-    engine: str = "paddleocr"
-    gpu_enabled: bool = True
+    engine: str = "rapidocr"
+    gpu_enabled: bool = False
+
+
+class _Vision(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="VISION_")
+    extract_rate_sec: float = 2.0
+    dedup_threshold: float = 0.08
+    ocr_confidence_threshold: float = 0.7
+    enable_heavy_fallbacks: bool = False
+    max_workers: int = 0
+    max_frames: int = 150
 
 
 class _Pipeline(BaseSettings):
@@ -149,6 +159,7 @@ class Settings(BaseSettings):
     openai: _OpenAI = Field(default_factory=_OpenAI)
     asr: _ASR = Field(default_factory=_ASR)
     ocr: _OCR = Field(default_factory=_OCR)
+    vision: _Vision = Field(default_factory=_Vision)
     pipeline: _Pipeline = Field(default_factory=_Pipeline)
 
     @property
