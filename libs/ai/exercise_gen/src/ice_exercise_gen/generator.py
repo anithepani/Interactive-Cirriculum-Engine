@@ -233,12 +233,24 @@ def _build_prompt(etype: str, cp: dict, seg: dict, conc: dict, code_str: str) ->
     template = _load_template(etype)
     difficulty = cp.get("difficulty", conc.get("difficulty", 3))
 
+    # ``segment_text`` is the grounding excerpt injected into the prompt so the
+    # LLM bases the question on the actual video content. Segments do not store
+    # raw transcript text, so we fall back to the summary (the closest grounded
+    # field) when a dedicated ``text``/``transcript`` field is absent.
+    segment_text = (
+        seg.get("text")
+        or seg.get("transcript")
+        or seg.get("summary")
+        or "(No excerpt available for this segment.)"
+    )
+
     variables = {
         "concept": conc.get("label", cp.get("concept_id", "unknown")),
         "concept_description": conc.get("description", ""),
         "difficulty": difficulty,
         "segment_summary": seg.get("summary", ""),
         "segment_title": seg.get("title", ""),
+        "segment_text": segment_text,
         "instructor_code": code_str or "(No instructor code was extracted for this segment.)",
     }
 

@@ -7,11 +7,12 @@ the final ``avoid_final_sec`` of the video (with an exemption for the final
 segment), rotating exercise types, and assigning the best-matched concept
 from the M5 concept graph.
 
-Exercise-type rotation is content-aware: segments whose concept/text look
-technical (programming) cycle through ``["mcq", "coding", "debug",
-"conceptual"]``; non-technical segments cycle through ``["mcq",
-"conceptual"]`` so motivational/speech content never produces coding/debug
-exercises.
+Exercise-type rotation is content-aware (Phase 4, no fixed sequence): segments
+whose concept/text look technical (programming) prioritise ``coding``/``debug``
+(alternating, with an ``mcq`` break-up so three code tasks never fire in a
+row); non-technical segments use only ``["mcq", "conceptual"]`` so
+motivational/speech content never produces coding/debug exercises. No exercise
+type repeats more than twice consecutively. See ``_choose_exercise_type``.
 
 Lead: Aryan. Support: Zubair.
 """
@@ -74,6 +75,74 @@ def _pick_concept_id(
         if cid in graph_concept_ids:
             return cid
     return fallback
+
+
+_MAX_SAME_TYPE_STREAK = 2
+
+
+def _choose_exercise_type(is_tech: bool, recent: list[str]) -> str:
+    """Pick a content-aware exercise type for the next checkpoint.
+
+    Content-aware rotation (Phase 4, no fixed sequence):
+      - Technical segments prioritise ``coding``/``debug`` (alternating), and
+        fall back to ``mcq`` when the last two checkpoints were both code-heavy
+        so a learner is never hit with three coding/debug tasks in a row.
+      - Non-technical segments use only ``mcq``/``conceptual``.
+      - No exercise type may repeat more than ``_MAX_SAME_TYPE_STREAK`` (2)
+        times consecutively; if the natural choice would break that rule the
+        next candidate in the bucket is used instead.
+
+    Args:
+        is_tech: Whether the segment/concept looks technical (M6 heuristic).
+        recent: The exercise types already assigned, most-recent last. Only
+            the tail is inspected.
+
+    Returns:
+        One of ``mcq``/``coding``/``debug``/``conceptual``.
+    """
+    bucket = _TECH_TYPES if is_tech else _NONTECH_TYPES
+    last = recent[-1] if recent else None
+    prev = recent[-2] if len(recent) >= 2 else None
+    streak = 0
+    if last is not None:
+        for t in reversed(recent):
+            if t == last:
+                streak += 1
+            else:
+                break
+
+    # Build a priority-ordered candidate list for this segment kind.
+    if is_tech:
+        code_types = ["coding", "debug"]
+        # Alternate code types: if the last one was a code type, prefer the
+        # *other* code type first for variety.
+        if last == "coding":
+            code_types = ["debug", "coding"]
+        elif last == "debug":
+            code_types = ["coding", "debug"]
+        # If the last two were both code-heavy, break it up with an mcq first.
+        last_two_code = last in ("coding", "debug") and prev in ("coding", "debug")
+        if last_two_code:
+            candidates = ["mcq", *code_types, "conceptual"]
+        else:
+            candidates = [*code_types, "mcq", "conceptual"]
+    else:
+        # Non-technical: alternate mcq/conceptual for variety.
+        candidates = ["conceptual", "mcq"] if last == "mcq" else ["mcq", "conceptual"]
+
+    # Enforce the no-more-than-twice-in-a-row rule: skip any candidate that
+    # would extend an existing streak of length >= _MAX_SAME_TYPE_STREAK.
+    for cand in candidates:
+        if cand == last and streak >= _MAX_SAME_TYPE_STREAK:
+            continue
+        if cand in bucket:
+            return cand
+    # Fallback: first bucket entry that does not violate the streak rule, else
+    # the first bucket entry (guarantees a valid return).
+    for cand in bucket:
+        if not (cand == last and streak >= _MAX_SAME_TYPE_STREAK):
+            return cand
+    return bucket[0]
 
 
 def _is_technical(seg: dict, concept_node: dict | None) -> bool:
@@ -162,8 +231,7 @@ def place_checkpoints(
 
     checkpoints: list[dict] = []
     last_ts = -min_gap_sec  # so the first eligible segment always passes
-    tech_idx = 0
-    nontech_idx = 0
+    recent_types: list[str] = []  # assigned types, most-recent last
 
     for seg in segments:
         # Checkpoint fires at the segment END: the learner has finished the
@@ -194,14 +262,14 @@ def place_checkpoints(
         concept_id = _pick_concept_id(seg_concepts, graph_concept_ids, fallback_concept_id)
         concept_node = graph_concepts_by_id.get(concept_id)
 
-        # Content-aware exercise-type rotation: non-technical segments never
-        # get coding/debug exercises (non-technical fallback, bug #7).
-        if _is_technical(seg, concept_node):
-            exercise_type = _TECH_TYPES[tech_idx % len(_TECH_TYPES)]
-            tech_idx += 1
-        else:
-            exercise_type = _NONTECH_TYPES[nontech_idx % len(_NONTECH_TYPES)]
-            nontech_idx += 1
+        # Content-aware exercise-type rotation (Phase 4): technical segments
+        # prioritise coding/debug, non-technical segments only get mcq/
+        # conceptual, and no type repeats more than twice in a row. Non-
+        # technical segments never get coding/debug exercises (bug #7).
+        exercise_type = _choose_exercise_type(
+            _is_technical(seg, concept_node), recent_types
+        )
+        recent_types.append(exercise_type)
 
         idx = len(checkpoints)
         checkpoints.append(

@@ -1,6 +1,10 @@
 You are an expert instructor grading a free-text conceptual answer with an
 LLM-as-a-Judge rubric (Zheng 2023). Grade against the rubric, not just wording.
 
+Grade STRICTLY against the specific question, reference answer, and rubric below.
+Do not award credit for correct statements that are unrelated to what THIS
+question asks.
+
 ## Question
 {{ prompt }}
 

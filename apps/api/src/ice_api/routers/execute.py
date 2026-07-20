@@ -23,6 +23,29 @@ class ExecuteResponse(BaseModel):
 @router.post("", response_model=ExecuteResponse)
 async def execute_code(request: ExecuteRequest):
     try:
+        # ---- Judge0 sandbox path (gated by SANDBOX_BACKEND=judge0) ----------
+        # run_sandbox returns a signal result (backend="subprocess"/"unavailable")
+        # when Judge0 is disabled or unreachable, in which case we fall through
+        # to the original local-subprocess path below (zero-regression).
+        try:
+            from ice_shared import run_sandbox
+
+            sb = run_sandbox(request.code, language=request.language, stdin=request.stdin or "")
+            if sb.backend == "judge0":
+                output = sb.stdout or sb.stderr or sb.error or "No output"
+                return ExecuteResponse(
+                    status="success",
+                    stdout=sb.stdout,
+                    stderr=sb.stderr or sb.error,
+                    output=output,
+                    passed=bool(sb.passed),
+                )
+        except HTTPException:
+            raise
+        except Exception:  # noqa: BLE001 - never let sandbox wiring break /execute
+            pass
+
+        # ---- Local subprocess fallback (default) ----------------------------
         # Only Python is supported in this fallback
         if request.language != "python":
             raise HTTPException(status_code=400, detail="Only Python is supported in this fallback")

@@ -1,6 +1,9 @@
 from __future__ import annotations
 import sys
 import os
+import subprocess
+import tempfile
+import contextlib
 import logging
 import asyncio
 import traceback
@@ -14,10 +17,194 @@ from pydantic import BaseModel
 
 from ice_shared.db import get_session, set_tenant_context
 from ice_api.auth_utils import get_current_user
-from ice_api.models import Curriculum, Tenant, Segment, Concept, Checkpoint, Exercise, User
+from ice_api.models import (
+    Curriculum,
+    Tenant,
+    Segment,
+    Concept,
+    Checkpoint,
+    Exercise,
+    User,
+    SkillModel,
+)
 from ice_api.process import process_video, trigger_recap
 
 logger = logging.getLogger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Coding/debug sandbox execution (M9/M14)
+# --------------------------------------------------------------------------- #
+# The learner's code is run against the exercise's stored hidden tests. Backend
+# selection honours SANDBOX_BACKEND via ice_shared.run_sandbox; when Judge0 is
+# disabled/unreachable we fall back to a local subprocess (identical to the
+# /api/v1/execute fallback), so this never breaks the existing flow.
+
+_SANDBOX_TIMEOUT = 10
+
+
+def _run_code_against_test(solution: str, test: str, language: str = "python") -> tuple[bool, str, str]:
+    """Run ``solution + test`` once; return (passed, stdout, stderr).
+
+    Tries Judge0 first (only if SANDBOX_BACKEND=judge0 and reachable), else a
+    local Python subprocess. Any failure yields (False, "", <error>) so the
+    caller always gets a well-formed result.
+    """
+    program = (solution or "").rstrip() + "\n\n" + (test or "").strip() + "\n"
+
+    # 1) Judge0 path (gated + auto-fallback inside run_sandbox).
+    try:
+        from ice_shared import run_sandbox
+
+        res = run_sandbox(program, language=language, stdin="")
+        if res.backend == "judge0":
+            return bool(res.passed), res.stdout or "", res.stderr or ""
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("run_sandbox failed, using subprocess fallback: %s", exc)
+
+    # 2) Local subprocess fallback (Python only).
+    if (language or "python").lower() not in ("python", "python3"):
+        return False, "", f"Unsupported language for local fallback: {language}"
+    path = ""
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+            f.write(program)
+            path = f.name
+        proc = subprocess.run(
+            [sys.executable, path],
+            capture_output=True,
+            text=True,
+            timeout=_SANDBOX_TIMEOUT,
+        )
+        return proc.returncode == 0, proc.stdout or "", proc.stderr or ""
+    except subprocess.TimeoutExpired:
+        return False, "", "TIMEOUT"
+    except OSError as exc:
+        return False, "", f"EXEC_ERROR: {exc}"
+    finally:
+        if path:
+            with contextlib.suppress(OSError):
+                os.unlink(path)
+
+
+def _collect_tests(data: Dict[str, Any], ex_type: str) -> list[str]:
+    """Pull the assertion/test strings out of an exercise payload."""
+    tests: list[str] = []
+    if ex_type == "debug":
+        tests = list(data.get("tests") or [])
+    else:  # coding
+        tests = list(data.get("tests_hidden") or []) + list(data.get("tests_visible") or [])
+    return [t for t in tests if t and str(t).strip()]
+
+
+def _evaluate_code_submission(answer: str, data: Dict[str, Any], ex_type: str) -> Dict[str, Any]:
+    """Execute learner code against hidden tests; return passed + stdout/stderr."""
+    tests = _collect_tests(data, ex_type)
+    language = str(data.get("language", "python") or "python")
+
+    if not answer.strip():
+        return {"status": "ok", "passed": False, "stdout": "", "stderr": "No code submitted."}
+
+    if not tests:
+        # No stored tests: run the code once to surface output; pass if it runs
+        # cleanly (mirrors /execute's exit-0 semantics). Non-regressive: this is
+        # stricter than the old "non-empty == pass" only when execution errors.
+        ok, out, err = _run_code_against_test(answer, "", language)
+        return {"status": "ok", "passed": ok, "stdout": out, "stderr": err}
+
+    passed_count = 0
+    first_err = ""
+    last_out = ""
+    for test in tests:
+        ok, out, err = _run_code_against_test(answer, test, language)
+        if out:
+            last_out = out
+        if ok:
+            passed_count += 1
+        elif not first_err:
+            first_err = err
+    all_passed = passed_count == len(tests)
+    return {
+        "status": "ok",
+        "passed": all_passed,
+        "stdout": last_out,
+        "stderr": "" if all_passed else first_err,
+        "tests_passed": passed_count,
+        "tests_total": len(tests),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Skill-model update (M10 adaptive + M11 progress) — best-effort side effect
+# --------------------------------------------------------------------------- #
+# Folds each attempt into the learner's per-concept SkillModel row (mastery via
+# EWMA, attempt count, weak-concept flag) and adjusts the next checkpoint's
+# difficulty using the M10 heuristic. Wrapped so a failure here NEVER breaks the
+# /evaluate response (zero-regression).
+
+_MASTERY_EWMA_ALPHA = 0.4
+_WEAK_THRESHOLD = 0.5
+
+
+async def _update_skill_model(
+    session: AsyncSession,
+    user_id: int,
+    cp: Checkpoint,
+    exercise: Optional[Exercise],
+    passed: bool,
+) -> None:
+    """Upsert the learner's SkillModel row for this checkpoint's concept."""
+    try:
+        concept_id = getattr(cp, "concept_id", None)
+        if concept_id is None:
+            return
+
+        from ice_api.models import SkillModel as SkillModelRow
+
+        score = 1.0 if passed else 0.0
+
+        row_stmt = select(SkillModelRow).where(
+            SkillModelRow.user_id == user_id,
+            SkillModelRow.concept_id == concept_id,
+        )
+        row = (await session.execute(row_stmt)).scalar_one_or_none()
+
+        if row is None:
+            new_mastery = _MASTERY_EWMA_ALPHA * score
+            row = SkillModelRow(
+                user_id=user_id,
+                concept_id=concept_id,
+                mastery=new_mastery,
+                attempts=1,
+            )
+            # Additive nullable columns (may not exist on very old DBs).
+            with contextlib.suppress(Exception):
+                row.weak_concepts = [] if new_mastery >= _WEAK_THRESHOLD else [str(concept_id)]
+                base = int(getattr(cp, "difficulty", 3) or 3)
+                row.difficulty = max(1, base - 1) if not passed else base
+            session.add(row)
+        else:
+            prior = float(row.mastery or 0.0)
+            row.mastery = (1 - _MASTERY_EWMA_ALPHA) * prior + _MASTERY_EWMA_ALPHA * score
+            row.attempts = int(row.attempts or 0) + 1
+            with contextlib.suppress(Exception):
+                weak = list(getattr(row, "weak_concepts", None) or [])
+                cid = str(concept_id)
+                if row.mastery < _WEAK_THRESHOLD and cid not in weak:
+                    weak.append(cid)
+                elif row.mastery >= _WEAK_THRESHOLD and cid in weak:
+                    weak.remove(cid)
+                row.weak_concepts = weak
+                # M10: lower next difficulty by 1 on fail, raise by 1 on pass.
+                cur = int(getattr(row, "difficulty", None) or getattr(cp, "difficulty", 3) or 3)
+                row.difficulty = max(1, cur - 1) if not passed else min(5, cur + 1)
+
+        await session.commit()
+    except Exception as exc:  # pragma: no cover - never break eval response
+        logger.warning("skill_model update skipped: %s", exc)
+        with contextlib.suppress(Exception):
+            await session.rollback()
+
 
 router = APIRouter(prefix="/api/v1/curricula", tags=["curricula"])
 
@@ -133,6 +320,8 @@ async def evaluate(
         ex_type = exercise.type.value if exercise.type else ""
         data: Dict[str, Any] = exercise.payload or {}
 
+        extra: Dict[str, Any] = {}
+
         if ex_type == "mcq":
             options = data.get("options") or []
             answer_idx = data.get("answer_idx", data.get("answer_index"))
@@ -146,12 +335,32 @@ async def evaluate(
             min_sim = float(data.get("min_similarity", 0.7) or 0.7)
             ratio = SequenceMatcher(None, answer.lower(), reference.lower()).ratio()
             passed = bool(answer) and bool(reference) and ratio >= min_sim
+        elif ex_type in ("coding", "debug"):
+            # M9: actually execute the submission against the exercise's
+            # hidden (+ visible) tests. Backend gated by SANDBOX_BACKEND inside
+            # run_sandbox; when the sandbox is unavailable it falls back to a
+            # local subprocess. Run off the event loop so we never block it.
+            graded = await asyncio.to_thread(
+                _evaluate_code_submission, answer, data, ex_type
+            )
+            passed = bool(graded.get("passed"))
+            extra = {
+                "stdout": graded.get("stdout", ""),
+                "stderr": graded.get("stderr", ""),
+            }
+            if "tests_passed" in graded:
+                extra["tests_passed"] = graded["tests_passed"]
+                extra["tests_total"] = graded["tests_total"]
         else:
-            # coding / debug route through /api/v1/execute; here we only
-            # accept a non-empty answer so progress can be recorded.
             passed = bool(answer)
 
-        return {"status": "ok", "passed": passed}
+        # M11: fold this attempt into the learner's skill model (best-effort;
+        # never breaks the eval response). M10 adjusts next-checkpoint difficulty.
+        await _update_skill_model(
+            session, current_user.id, cp, exercise, passed
+        )
+
+        return {"status": "ok", "passed": passed, **extra}
 
     except HTTPException:
         raise

@@ -49,6 +49,8 @@ class _Judge0(BaseSettings):
 
 class _Sandbox(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SANDBOX_")
+    # backend: "subprocess" (host, default = zero-regression) | "judge0"
+    backend: str = "subprocess"
     cpu_limit: int = 2
     memory_limit: int = 262144
     time_limit: int = 5
@@ -144,6 +146,10 @@ class Settings(BaseSettings):
     # LLM providers (Groq is the primary Phase-0 path; OpenAI/OpenRouter are fallback)
     groq_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
+    # Rate-limit handling for the Groq client (429 backoff). Exponential:
+    # sleep = groq_backoff_initial * 2**attempt + jitter (capped).
+    groq_max_retries: int = 5
+    groq_backoff_initial: float = 2.0
 
     sentry_dsn: str = ""
     prometheus_metrics_port: int = 9090

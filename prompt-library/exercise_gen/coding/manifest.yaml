@@ -1,5 +1,5 @@
 name: exercise_gen-coding
-version: 0.1.0
+version: 0.2.0
 model: gpt-4o
 fallback_model: Qwen/Qwen2.5-Coder-32B-Instruct
 tier: high_value
@@ -28,6 +28,14 @@ inputs:
   - name: segment_summary
     type: string
     required: true
+  - name: segment_title
+    type: string
+    description: Title of the video segment this exercise is grounded in.
+    required: false
+  - name: segment_text
+    type: string
+    description: Excerpt/summary of the video segment; the question must be based strictly on this.
+    required: false
 
 output_schema:
   type: object

@@ -60,17 +60,48 @@ services:
       mc anonymous set download local/ice-artifacts || true;
       "
 
-  # ---- Code sandbox (M14, MVP) ----
-  # NOTE: judge0 1.13 requires its own Postgres + a judge0-workers container.
-  # No application code calls judge0 yet (ice_evaluation is a stub). Commented
-  # out for bootable-first; re-add with workers+db when wiring M9.
-  # judge0:
-  #   image: judge0/judge0:1.13.0
-  #   environment:
-  #     REDIS_URL: redis://redis:6379/3
-  #   ports: ["2358:2358"]
-  #   depends_on:
-  #     redis: { condition: service_healthy }
+  # ---- Code sandbox (M14) ----
+  # Judge0 1.13 needs its own Postgres (judge0-db) + a judge0-workers container.
+  # It reuses the existing redis on an isolated DB index (3) — see judge0.conf.
+  # IMPORTANT: api/worker do NOT depend_on judge0, so a judge0 boot problem can
+  # never block the stable stack. Execution only routes here when
+  # SANDBOX_BACKEND=judge0; otherwise these containers sit idle and unused.
+  judge0-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: judge0
+      POSTGRES_PASSWORD: judge0
+      POSTGRES_DB: judge0
+    volumes:
+      - ice_judge0_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U judge0"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  judge0:
+    image: judge0/judge0:1.13.0
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    ports: ["2358:2358"]
+    privileged: true
+    depends_on:
+      judge0-db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  judge0-workers:
+    image: judge0/judge0:1.13.0
+    command: ["./scripts/workers"]
+    volumes:
+      - ./judge0.conf:/judge0.conf:ro
+    privileged: true
+    depends_on:
+      judge0-db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
 
   # ---- Application services (run locally during Phase 0; containerized later) ----
   api:
@@ -86,9 +117,16 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       S3_ENDPOINT: http://minio:9000
       JUDGE0_URL: http://judge0:2358
+      # Sandbox backend: subprocess (default, zero-regression) | judge0
+      SANDBOX_BACKEND: ${SANDBOX_BACKEND:-subprocess}
       ENV: dev
       LOG_LEVEL: INFO
       CORS_ORIGINS: http://localhost:3000
+      # Uvicorn auto-reload: OFF by default (stable / production-like). Set
+      # UVICORN_RELOAD=1 to enable hot reload, scoped to apps/ + libs/ only so
+      # watchfiles does not recurse into .venv/caches/node_modules (which caused
+      # "Cannot allocate memory (os error 12)").
+      UVICORN_RELOAD: ${UVICORN_RELOAD:-}
       UV_PROJECT_ENVIRONMENT: /opt/ice-venv
       UV_CACHE_DIR: /opt/uv-cache
       HF_HOME: /opt/hf-cache
@@ -107,7 +145,7 @@ services:
       - ice_api_venv:/opt/ice-venv
       - ice_uv_cache:/opt/uv-cache
       - ice_hf_cache:/opt/hf-cache
-    command: uv run --package ice-api uvicorn ice_api.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "uv run --package ice-api uvicorn ice_api.main:app --host 0.0.0.0 --port 8000 ${UVICORN_RELOAD:+--reload --reload-dir /app/apps --reload-dir /app/libs}"
 
   worker:
     build:
@@ -122,6 +160,8 @@ services:
       CELERY_RESULT_BACKEND: redis://redis:6379/2
       S3_ENDPOINT: http://minio:9000
       JUDGE0_URL: http://judge0:2358
+      # Sandbox backend: subprocess (default, zero-regression) | judge0
+      SANDBOX_BACKEND: ${SANDBOX_BACKEND:-subprocess}
       ENV: dev
       LOG_LEVEL: INFO
       UV_PROJECT_ENVIRONMENT: /opt/ice-venv
@@ -188,3 +228,4 @@ volumes:
   ice_hf_cache:
   ice_api_venv:
   ice_worker_venv:
+  ice_judge0_pg:

@@ -5,12 +5,20 @@ that tests **understanding**, not recall.
 - {{ concept }}: {{ concept_description }}
 - Target difficulty (1-5): {{ difficulty }}
 
-## Lesson context
-{{ segment_summary }}
+## Lesson context (GROUND YOUR QUESTION IN THIS)
+Base the question **strictly** on the following excerpt from the video. Do NOT
+ask generic textbook trivia; the question must reflect what was actually taught
+in this segment.
+
+Segment: {{ segment_title }}
+Excerpt:
+{{ segment_text }}
+
+Summary: {{ segment_summary }}
 
 ## Requirements
-1. Write a `prompt` that asks about `{{ concept }}` in a way that requires
-   reasoning, not memorisation.
+1. Write a `prompt` that asks about `{{ concept }}` **as presented in the excerpt
+   above**, in a way that requires reasoning, not memorisation.
 2. Provide 4 `options` — one correct, three plausible distractors.
 3. `answer_idx` is the 0-based index of the correct option.
 4. `distractor_tags`: for each distractor, a short tag explaining why it is

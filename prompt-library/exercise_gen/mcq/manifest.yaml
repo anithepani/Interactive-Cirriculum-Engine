@@ -1,5 +1,5 @@
 name: exercise_gen-mcq
-version: 0.1.0
+version: 0.2.0
 model: gpt-4o
 fallback_model: meta-llama/Llama-3.1-70B-Instruct
 tier: high_value
@@ -23,7 +23,16 @@ inputs:
     required: true
   - name: segment_summary
     type: string
+    description: Summary of the video segment; the question must be grounded in this excerpt.
     required: true
+  - name: segment_title
+    type: string
+    description: Title of the video segment (grounding context).
+    required: false
+  - name: segment_text
+    type: string
+    description: Excerpt text from the segment the question must be based on.
+    required: false
 
 output_schema:
   type: object

@@ -151,7 +151,26 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     # ---- M7: generate exercises ----
     from ice_exercise_gen import generate_exercises
 
-    exercises = generate_exercises(checkpoints, segments, graph)
+    # Feed the instructor's on-screen code (M3 vision OCR) into M7 so coding/
+    # debug prompts are grounded in the real lesson context (Phase 4, Task 3).
+    # Safe fallback: if vision failed or produced no code regions this is an
+    # empty list and M7 behaves exactly as before.
+    instructor_code: list[str] = []
+    for vi in visual_items:
+        if isinstance(vi, dict):
+            vtype_val = vi.get("type")
+            text = vi.get("text")
+        else:
+            vtype = getattr(vi, "type", None)
+            vtype_val = getattr(vtype, "value", vtype)
+            text = getattr(vi, "text", None)
+        vtype_val = getattr(vtype_val, "value", vtype_val)
+        if vtype_val == "code" and text and str(text).strip():
+            instructor_code.append(str(text))
+
+    exercises = generate_exercises(
+        checkpoints, segments, graph, instructor_code=instructor_code
+    )
     ex_map = await persist.persist_exercises(tenant_id, exercises, cp_map)
 
     # ---- M8: validate tests (gated) ----

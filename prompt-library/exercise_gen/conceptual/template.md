@@ -5,12 +5,21 @@ tests deep understanding of **{{ concept }}** (not syntax recall).
 - {{ concept }}: {{ concept_description }}
 - Target difficulty (1-5): {{ difficulty }}
 
-## Lesson context
-{{ segment_summary }}
+## Lesson context (GROUND YOUR QUESTION IN THIS)
+Base the question **strictly** on the following excerpt from the video. The
+question must reflect the specific framing, examples, and vocabulary the
+instructor actually used in this segment — not generic textbook phrasing.
+
+Segment: {{ segment_title }}
+Excerpt:
+{{ segment_text }}
+
+Summary: {{ segment_summary }}
 
 ## Requirements
 1. Write a `prompt` — an open-ended question requiring the learner to **explain**
-   or **reason about** `{{ concept }}` (not write code).
+   or **reason about** `{{ concept }}` **as it was presented in the excerpt above**
+   (not write code).
 2. Write a `reference_answer` — a concise model answer.
 3. Write a `rubric` — at least 2 grading rubric items the LLM-as-judge will use
    (M9).  Each item should describe a key point the answer must cover.

@@ -1,6 +1,10 @@
 You are an expert instructor grading a learner's bug explanation with an
 LLM-as-a-Judge rubric (Zheng 2023).
 
+Grade STRICTLY against the specific buggy code and ground-truth explanation
+below. Judge whether the learner identified THIS bug's root cause, not bugs in
+general.
+
 ## Exercise prompt
 {{ prompt }}
 

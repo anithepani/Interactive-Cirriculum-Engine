@@ -345,8 +345,26 @@ def _run_tests_counted(
 
 
 def _run_one(solution: str, test: str, timeout: int) -> tuple[bool, str]:
-    """Execute ``solution + "\\n" + test`` in a subprocess; exit 0 == pass."""
+    """Execute ``solution + "\\n" + test``; exit 0 == pass.
+
+    Routes through the Judge0 sandbox when ``SANDBOX_BACKEND=judge0`` and the
+    service is reachable; otherwise (default, or Judge0 down) falls back to the
+    original local-subprocess path so behavior is unchanged when the sandbox is
+    not configured (zero-regression).
+    """
     program = solution.rstrip() + "\n\n" + test.strip() + "\n"
+
+    # Judge0 path (opt-in, with automatic fallback to subprocess below).
+    try:
+        from ice_shared.judge0_client import run_sandbox
+
+        sb = run_sandbox(program, language="python")
+        if sb.backend == "judge0":
+            return sb.passed, sb.stderr or ""
+        # backend in {"subprocess", "unavailable"} -> fall through to local run.
+    except Exception as exc:  # pragma: no cover - defensive: never break grading
+        logger.debug("Judge0 sandbox unavailable, using local subprocess: %s", exc)
+
     with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
         f.write(program)
         path = f.name
