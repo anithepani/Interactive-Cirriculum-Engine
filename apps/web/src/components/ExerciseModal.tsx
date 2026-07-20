@@ -9,6 +9,11 @@ const MonacoEditor = dynamic(
   { ssr: false }
 );
 
+const DiffEditor = dynamic(
+  () => import("@monaco-editor/react").then((mod) => mod.DiffEditor),
+  { ssr: false }
+);
+
 export interface RunResult {
   passed?: boolean;
   message?: string;
@@ -41,6 +46,8 @@ interface OutputState {
   stdout: string;
   stderr: string;
   note?: string;
+  /** Exit status of the run: true = exit 0, false = runtime error, undefined = n/a. */
+  ok?: boolean;
 }
 
 export default function ExerciseModal({
@@ -138,36 +145,42 @@ export default function ExerciseModal({
 
   if (!isOpen) return null;
 
-  const applyOutput = (r: RunResult | SubmitResult, fallbackNote?: string) => {
+  const applyOutput = (r: RunResult | SubmitResult, fallbackNote?: string, ok?: boolean) => {
     const stdout = r.stdout ? String(r.stdout) : "";
     const stderr = r.stderr ? String(r.stderr) : "";
     if (stdout || stderr) {
-      setOutput({ stdout, stderr, note: fallbackNote });
+      setOutput({ stdout, stderr, note: fallbackNote, ok });
     } else if (fallbackNote) {
-      setOutput({ stdout: "", stderr: "", note: fallbackNote });
+      setOutput({ stdout: "", stderr: "", note: fallbackNote, ok });
     } else {
       setOutput(null);
     }
   };
 
   // "Run": trial execution via /execute. No hidden tests, no skill-model
-  // update, does not mark the checkpoint or lock the editor.
+  // update, does not mark the checkpoint or lock the editor. Always renders
+  // stdout/stderr (incl. tracebacks) verbatim; only when BOTH are empty do we
+  // show a clear, exit-code-aware note.
   const handleRun = async () => {
     if (!onRun || !answer) return;
     setRunning(true);
     setOutput(null);
     try {
       const r = await onRun(answer);
-      applyOutput(
-        r,
-        r.stdout || r.stderr
-          ? undefined
-          : r.passed
-          ? "Ran successfully (no output)."
-          : "Ran with no output."
-      );
+      const hasOutput = Boolean(r.stdout || r.stderr);
+      const note = hasOutput
+        ? undefined
+        : r.passed
+        ? "Code executed successfully (no output)."
+        : "Code exited with an error but produced no output.";
+      applyOutput(r, note, Boolean(r.passed));
     } catch (error) {
-      setOutput({ stdout: "", stderr: (error as Error).message || "Run failed.", note: undefined });
+      setOutput({
+        stdout: "",
+        stderr: (error as Error).message || "Run failed.",
+        note: undefined,
+        ok: false,
+      });
     } finally {
       setRunning(false);
     }
@@ -262,7 +275,46 @@ export default function ExerciseModal({
       );
     }
 
-    // Code editor (coding + debug)
+    // Code editor (coding + debug).
+    // Review mode + incorrect + coding + a reference solution available ->
+    // show a side-by-side diff (learner's answer vs the correct solution) with
+    // Monaco's native red/green line highlighting. Debug has no corrected-code
+    // field, so it keeps the plain read-only editor + text bug_explanation hint.
+    const showDiff =
+      reviewMode &&
+      completedStatus === "incorrect" &&
+      exType === "coding" &&
+      Boolean(exercise.reference_solution) &&
+      submittedAnswer != null;
+
+    if (showDiff) {
+      return (
+        <div>
+          <div className="mb-1 flex items-center justify-between text-xs font-semibold uppercase tracking-wide">
+            <span className="text-red-300">Your submission</span>
+            <span className="text-green-300">Reference solution</span>
+          </div>
+          <div className="h-[320px] rounded-3xl border border-white/10 bg-slate-900/90 overflow-hidden">
+            <DiffEditor
+              height="100%"
+              language={exercise.language || "python"}
+              theme="vs-dark"
+              original={submittedAnswer || ""}
+              modified={exercise.reference_solution || ""}
+              options={{
+                minimap: { enabled: false },
+                fontSize: 14,
+                wordWrap: "on",
+                readOnly: true,
+                renderSideBySide: true,
+                renderOverviewRuler: false,
+              }}
+            />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="h-[320px] rounded-3xl border border-white/10 bg-slate-900/90 overflow-hidden">
         <MonacoEditor
@@ -303,9 +355,27 @@ export default function ExerciseModal({
 
   const renderOutputWindow = () => {
     if (!output) return null;
+    // Exit-status line: only meaningful when we know the exit code (Run).
+    const statusLabel =
+      output.ok === undefined
+        ? null
+        : output.ok
+        ? "Exit 0 · success"
+        : "Runtime error";
     return (
       <div className="mt-4">
-        <div className="text-xs font-semibold uppercase tracking-wide mb-1 text-slate-400">Output</div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Output</div>
+          {statusLabel && (
+            <div
+              className={`text-xs font-semibold uppercase tracking-wide ${
+                output.ok ? "text-green-400" : "text-red-400"
+              }`}
+            >
+              {statusLabel}
+            </div>
+          )}
+        </div>
         <div className="max-h-48 overflow-auto rounded-lg bg-black/80 border border-white/10 p-3 font-mono text-xs">
           {output.stdout && (
             <pre className="whitespace-pre-wrap text-slate-200">{output.stdout}</pre>

@@ -60,6 +60,8 @@ export interface ExercisePayload {
   starter_code?: string;
   starter?: string;
   solution?: string;
+  // Coding exercises: the reference solution (used for the diff-style review).
+  reference_solution?: string;
   language?: string;
   min_similarity?: number;
   // Debug exercises: the buggy snippet the learner must fix (seeds the editor).
