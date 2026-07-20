@@ -47,6 +47,23 @@ def get_engine() -> AsyncEngine:
             max_overflow=20 if not url.startswith("sqlite") else 0,
             connect_args=connect_args,
         )
+        # SQLite does NOT enforce foreign keys (and thus ON DELETE CASCADE)
+        # unless PRAGMA foreign_keys=ON is set per-connection. Without this,
+        # deleting a curriculum would orphan every child row on the dev DB.
+        # Postgres enforces FKs natively, so this listener is a no-op there.
+        if url.startswith("sqlite"):
+            from sqlalchemy import event
+
+            sync_engine = _engine.sync_engine
+
+            @event.listens_for(sync_engine, "connect")
+            def _set_sqlite_pragma(dbapi_connection, _connection_record):  # noqa: ANN001
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("PRAGMA foreign_keys=ON")
+                finally:
+                    cursor.close()
+
     return _engine
 
 

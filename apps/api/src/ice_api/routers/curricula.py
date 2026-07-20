@@ -6,6 +6,7 @@ import tempfile
 import contextlib
 import logging
 import asyncio
+import re
 import traceback
 from difflib import SequenceMatcher
 from typing import List, Optional, Dict, Any
@@ -19,6 +20,7 @@ from ice_shared.db import get_session, set_tenant_context
 from ice_api.auth_utils import get_current_user
 from ice_api.models import (
     Curriculum,
+    CurriculumStatus,
     Tenant,
     Segment,
     Concept,
@@ -312,6 +314,133 @@ def _exercise_payload(exercise: Optional[Exercise]) -> Optional[Dict[str, Any]]:
     return payload or None
 
 
+_YT_ID_RE = re.compile(
+    r"(?:youtu\.be/|youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|v/))([A-Za-z0-9_-]{11})"
+)
+
+
+def _extract_youtube_id(url: str) -> Optional[str]:
+    """Return the 11-char YouTube video id from a URL, or None if not a YT URL."""
+    if not url:
+        return None
+    match = _YT_ID_RE.search(url)
+    return match.group(1) if match else None
+
+
+async def _find_existing_ready_curriculum(
+    session: AsyncSession, tenant_id: int, video_id: str
+) -> Optional[Curriculum]:
+    """Return this tenant's READY curriculum for the same YouTube video, if any.
+
+    Matches on the video id appearing in ``source_ref`` (handles the various
+    YouTube URL shapes) and only treats ``ready`` rows as duplicates so failed
+    generations can be retried.
+    """
+    stmt = select(Curriculum).where(
+        Curriculum.tenant_id == tenant_id,
+        Curriculum.status == CurriculumStatus.ready,
+        Curriculum.source_ref.contains(video_id),
+    )
+    result = await session.execute(stmt)
+    return result.scalars().first()
+
+
+async def _cascade_delete_curriculum(session: AsyncSession, curriculum_id: int) -> None:
+    """Purge all rows that hang off a curriculum, child-first.
+
+    Covers grandchildren keyed off checkpoints/concepts/exercises/sessions that
+    a naive ``DELETE curricula`` would orphan (or fail on, under FK enforcement):
+    checkpoint_attempts, eval_results, skill_model, tests, session_events, then
+    exercises, checkpoints, concept_edges, concepts, segments, sessions,
+    artifacts. Uses bulk DELETE statements so it is efficient and backend-neutral.
+    """
+    from sqlalchemy import delete as sa_delete
+    from ice_api.models import (
+        CheckpointAttempt,
+        ConceptEdge,
+        EvalResult,
+        SessionEvent,
+        Test,
+        Artifact,
+    )
+
+    # Resolve the id sets we need for grandchild deletes.
+    cp_ids = (
+        await session.execute(
+            select(Checkpoint.id).where(Checkpoint.curriculum_id == curriculum_id)
+        )
+    ).scalars().all()
+    concept_ids = (
+        await session.execute(
+            select(Concept.id).where(Concept.curriculum_id == curriculum_id)
+        )
+    ).scalars().all()
+    exercise_ids = (
+        (
+            await session.execute(
+                select(Exercise.id).where(Exercise.checkpoint_id.in_(cp_ids))
+            )
+        ).scalars().all()
+        if cp_ids
+        else []
+    )
+    session_ids = (
+        await session.execute(
+            select(Session.id).where(Session.curriculum_id == curriculum_id)
+        )
+    ).scalars().all()
+
+    # 1) Grandchildren of exercises / checkpoints.
+    if exercise_ids:
+        await session.execute(
+            sa_delete(EvalResult).where(EvalResult.exercise_id.in_(exercise_ids))
+        )
+        await session.execute(
+            sa_delete(Test).where(Test.exercise_id.in_(exercise_ids))
+        )
+    if cp_ids:
+        await session.execute(
+            sa_delete(CheckpointAttempt).where(
+                CheckpointAttempt.checkpoint_id.in_(cp_ids)
+            )
+        )
+        await session.execute(
+            sa_delete(Exercise).where(Exercise.checkpoint_id.in_(cp_ids))
+        )
+    # 2) Session events + sessions (watch-time / heartbeats).
+    if session_ids:
+        await session.execute(
+            sa_delete(SessionEvent).where(SessionEvent.session_id.in_(session_ids))
+        )
+    await session.execute(
+        sa_delete(Session).where(Session.curriculum_id == curriculum_id)
+    )
+    # 3) Skill model + concept edges keyed off this curriculum's concepts.
+    if concept_ids:
+        await session.execute(
+            sa_delete(SkillModel).where(SkillModel.concept_id.in_(concept_ids))
+        )
+        await session.execute(
+            sa_delete(ConceptEdge).where(ConceptEdge.source_id.in_(concept_ids))
+        )
+        await session.execute(
+            sa_delete(ConceptEdge).where(ConceptEdge.target_id.in_(concept_ids))
+        )
+    # 4) Direct children of the curriculum.
+    await session.execute(
+        sa_delete(Checkpoint).where(Checkpoint.curriculum_id == curriculum_id)
+    )
+    await session.execute(
+        sa_delete(Concept).where(Concept.curriculum_id == curriculum_id)
+    )
+    await session.execute(
+        sa_delete(Segment).where(Segment.curriculum_id == curriculum_id)
+    )
+    await session.execute(
+        sa_delete(Artifact).where(Artifact.curriculum_id == curriculum_id)
+    )
+
+
 @router.get("", response_model=List[Dict[str, Any]])
 async def list_curricula(
     current_user: User = Depends(get_current_user),
@@ -345,10 +474,34 @@ async def create_curriculum(
         tenant_id = current_user.tenant_id
         set_tenant_context(str(tenant_id))
 
+        # Duplicate validation (per-user): if this learner already has a READY
+        # curriculum for the same YouTube video, block the duplicate generation
+        # and let the frontend surface an informative modal. Failed curricula
+        # are NOT treated as duplicates so the user can retry. Non-YouTube URLs
+        # (no extractable video id) skip the check.
+        video_id = _extract_youtube_id(data.video_url)
+        if video_id:
+            existing = await _find_existing_ready_curriculum(
+                session, tenant_id, video_id
+            )
+            if existing is not None:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "duplicate_curriculum",
+                        "message": (
+                            "This video is already in your workspace as "
+                            f"\u201c{existing.title}\u201d."
+                        ),
+                        "curriculum_id": existing.id,
+                    },
+                )
+
         curriculum = Curriculum(
             tenant_id=tenant_id,
             title=data.title or "Untitled",
             source_ref=data.video_url,
+            source_type="youtube" if video_id else "upload",
         )
         session.add(curriculum)
         await session.commit()
@@ -359,6 +512,8 @@ async def create_curriculum(
 
         return {"curriculum_id": curriculum.id, "status": "queued"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error in create_curriculum: {e}")
         logger.error(traceback.format_exc())
@@ -508,16 +663,32 @@ async def delete_curriculum(
         tenant_id = current_user.tenant_id
         set_tenant_context(str(tenant_id))
 
-        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        # Ownership check: only the owning tenant may delete. Filtering on
+        # tenant_id (not just id) prevents cross-tenant deletion.
+        stmt = select(Curriculum).where(
+            Curriculum.id == curriculum_id,
+            Curriculum.tenant_id == tenant_id,
+        )
         result = await session.execute(stmt)
         curriculum = result.scalar_one_or_none()
         if not curriculum:
             raise HTTPException(status_code=404, detail="Curriculum not found")
 
+        # Explicit, ordered cascade. DB-level ON DELETE CASCADE only fires when
+        # the driver enforces FKs (Postgres always; SQLite only with
+        # PRAGMA foreign_keys=ON, now enabled in db.py). We delete children
+        # explicitly so cleanup is correct + identical on BOTH backends and so
+        # per-user tables keyed off checkpoints/concepts (checkpoint_attempts,
+        # skill_model, eval_results, session_events) are fully purged.
+        await _cascade_delete_curriculum(session, curriculum_id)
+
         await session.delete(curriculum)
         await session.commit()
         return {"status": "ok"}
+    except HTTPException:
+        raise
     except Exception as e:
+        await session.rollback()
         logger.error(f"Error deleting curriculum: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 

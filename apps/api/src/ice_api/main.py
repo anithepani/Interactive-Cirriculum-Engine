@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from ice_shared import settings
 from ice_shared.logging import configure_logging, get_logger
 
-from ice_api.routers import auth, curricula, execute
+from ice_api.routers import auth, curricula, execute, stats
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".env"))
 
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)        # POST /api/v1/auth/signup, login, verify, etc.
     app.include_router(curricula.router)   # POST /api/v1/curricula, GET /api/v1/curricula, etc.
     app.include_router(execute.router)     # POST /api/v1/execute
+    app.include_router(stats.router)       # GET /api/v1/stats/overview, /progress
 
     log.info(f"ice_api.create_app: env={settings.env}, cors_origins={origins}")
     return app
