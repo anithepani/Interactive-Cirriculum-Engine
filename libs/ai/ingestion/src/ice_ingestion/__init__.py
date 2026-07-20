@@ -31,9 +31,9 @@ def ingest_video(
         curriculum_id: Curriculum row id (for the S3 key path).
 
     Returns:
-        ``{"audio_path": str, "s3_key": str, "title": str,
+        ``{"video_path": str, "audio_path": str, "s3_key": str, "title": str,
         "duration_sec": float, "language_hint": str}`` -- the local WAV path
-        feeds M2 (transcribe); the rest persists to the DB.
+        feeds M2 (transcribe); the video feeds M3 (vision); the rest persists to the DB.
 
     Raises:
         ValueError: if the video duration is outside the configured window.
