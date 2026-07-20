@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useRouter } from "next/navigation";
 import {
   LayoutDashboard,
-  FolderVideo,
+  Library,
   Dumbbell,
   LineChart,
   Settings,
@@ -20,7 +20,7 @@ import { useLayoutStore } from "@/lib/store";
 const MENU_ITEMS = [
   { label: "Overview", isHeader: true },
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "My Curricula", href: "/upload", icon: FolderVideo },
+  { label: "My Curricula", href: "/upload", icon: Library },
   { label: "Exercises", href: "/exercises", icon: Dumbbell },
   { label: "Progress", href: "/progress", icon: LineChart },
   { label: "Settings", isHeader: true, className: "mt-6" },
