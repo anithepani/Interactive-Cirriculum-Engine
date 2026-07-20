@@ -11,14 +11,18 @@ import ExerciseModal from "@/components/ExerciseModal";
 import VideoProgressBar, { StatusMap } from "@/components/VideoProgressBar";
 import CheckpointDonut from "@/components/CheckpointDonut";
 import { authFetcher, authFetch } from "@/lib/auth";
-import RecapPlayer from "@/components/RecapPlayer";
+import RecapTabs from "@/components/RecapTabs";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import AppLayout from "@/components/layout/AppLayout";
 
 const fetcher = authFetcher;
 
-const PLAYER_OPTS = { playerVars: { rel: 0, modestbranding: 1 } } as const;
+// `disablekb: 1` removes the native keyboard seek shortcuts; the poll-loop
+// snap-back handles mouse scrubbing. `rel: 0` keeps related videos scoped.
+const PLAYER_OPTS = {
+  playerVars: { rel: 0, modestbranding: 1, disablekb: 1 },
+} as const;
 
 interface PlayerHandle {
   getCurrentTime(): number;
@@ -62,6 +66,14 @@ export default function CurriculumPage() {
   const lastTimeRef = useRef(0);
   const triggeredRef = useRef<Set<string | number>>(new Set());
   const checkpointsRef = useRef<Checkpoint[]>([]);
+  // Feature 7 — watch tracking + anti-scrub state.
+  // maxWatchedRef is the furthest timestamp the learner has legitimately
+  // reached; forward seeks beyond it (+tolerance) are snapped back.
+  const maxWatchedRef = useRef(0);
+  const resumeAppliedRef = useRef(false);
+  const resumeTargetRef = useRef(0); // backend resume_ts to seek to on ready
+  const watchAccumRef = useRef(0); // seconds watched since last heartbeat flush
+  const lastHeartbeatRef = useRef(0); // wall-clock ms of last flush
 
   const checkpoints = useMemo(() => data?.checkpoints ?? [], [data?.checkpoints]);
   useEffect(() => {
@@ -115,6 +127,56 @@ export default function CurriculumPage() {
     closeExercise();
   }, [closeExercise]);
 
+  // Feature 7 — flush a progress heartbeat to the backend (resume position +
+  // max-watched ceiling + accrued watch-time). Fire-and-forget; failures are
+  // non-fatal to playback.
+  const flushHeartbeat = useCallback(
+    (position: number) => {
+      if (!id) return;
+      const delta = watchAccumRef.current;
+      watchAccumRef.current = 0;
+      lastHeartbeatRef.current = Date.now();
+      void authFetch(`/api/v1/curricula/${id}/progress`, {
+        method: "POST",
+        body: JSON.stringify({
+          position: Math.max(0, position),
+          max_watched: maxWatchedRef.current,
+          watched_delta: delta,
+        }),
+      }).catch(() => {
+        /* non-fatal */
+      });
+    },
+    [id]
+  );
+
+  // Fetch the persisted resume position + max-watched ceiling once, so the
+  // player resumes where the learner left off and the anti-scrub floor is
+  // seeded across sessions.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/v1/curricula/${id}/progress`);
+        if (!res.ok) return;
+        const p = await res.json();
+        if (cancelled) return;
+        maxWatchedRef.current = Math.max(
+          maxWatchedRef.current,
+          Number(p?.max_watched_ts) || 0
+        );
+        // Stash resume target; applied in onReady once the player exists.
+        resumeTargetRef.current = Number(p?.resume_ts) || 0;
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
   useEffect(() => {
     setLoadingTimeout(false);
     setPlayerReady(false);
@@ -151,6 +213,36 @@ export default function CurriculumPage() {
       }
 
       const last = lastTimeRef.current;
+
+      // Feature 7 — anti-scrub: block forward seeks past the furthest
+      // legitimately-watched timestamp. A jump of >1.5s beyond both `last` and
+      // the max-watched ceiling is treated as a skip and snapped back. Backward
+      // seeks (rewatching) are always allowed.
+      const SCRUB_TOL = 1.5;
+      const ceiling = Math.max(maxWatchedRef.current, last);
+      if (t > ceiling + SCRUB_TOL) {
+        try {
+          player.seekTo(ceiling, true);
+        } catch {
+          /* ignore */
+        }
+        lastTimeRef.current = ceiling;
+        setCurrentTime(ceiling);
+        return;
+      }
+
+      // Accrue real watch-time only for normal forward playback (small steps),
+      // never for seeks/pauses, so hours reflect genuine engagement.
+      const step = t - last;
+      if (step > 0 && step < 2) {
+        watchAccumRef.current += step;
+        if (t > maxWatchedRef.current) maxWatchedRef.current = t;
+      }
+      // Periodic heartbeat (~every 10s of wall-clock).
+      if (Date.now() - lastHeartbeatRef.current > 10000) {
+        flushHeartbeat(t);
+      }
+
       const cps = checkpointsRef.current;
       for (let i = 0; i < cps.length; i++) {
         const cp = cps[i];
@@ -172,6 +264,7 @@ export default function CurriculumPage() {
           }
           lastTimeRef.current = cp.ts;
           setCurrentTime(cp.ts);
+          flushHeartbeat(cp.ts);
           openExerciseModal(cp, i);
           return;
         }
@@ -180,7 +273,27 @@ export default function CurriculumPage() {
       setCurrentTime(t);
     }, 250);
     return () => clearInterval(interval);
-  }, [playerReady, openExerciseModal, duration]);
+  }, [playerReady, openExerciseModal, duration, flushHeartbeat]);
+
+  // Flush a final heartbeat on unmount / tab close so watch-time isn't lost.
+  useEffect(() => {
+    const onHide = () => {
+      if (playerRef.current) {
+        try {
+          flushHeartbeat(playerRef.current.getCurrentTime() || 0);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    window.addEventListener("beforeunload", onHide);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("beforeunload", onHide);
+      document.removeEventListener("visibilitychange", onHide);
+      onHide();
+    };
+  }, [flushHeartbeat]);
 
   const handleRetry = () => {
     setIframeKey((prev) => prev + 1);
@@ -260,6 +373,24 @@ export default function CurriculumPage() {
                       } catch {
                         /* ignore */
                       }
+                      // Resume where the learner left off (Feature 7). Applied
+                      // once; seek to the persisted resume position and seed the
+                      // anti-scrub ceiling + poll baseline so it isn't flagged
+                      // as a forward skip.
+                      if (!resumeAppliedRef.current) {
+                        resumeAppliedRef.current = true;
+                        const target = resumeTargetRef.current;
+                        if (target > 1) {
+                          try {
+                            handle.seekTo(target, true);
+                          } catch {
+                            /* ignore */
+                          }
+                          lastTimeRef.current = target;
+                          maxWatchedRef.current = Math.max(maxWatchedRef.current, target);
+                          setCurrentTime(target);
+                        }
+                      }
                     }}
                     onError={() => setLoadingTimeout(true)}
                     onEnd={() => {
@@ -314,11 +445,11 @@ export default function CurriculumPage() {
             />
           </div>
 
-          {/* Recap Video Player */}
-          <RecapPlayer
-            curriculumId={data.id}
+          {/* Recap Video + Study Guide (tabbed; hidden until recap is ready) */}
+          <RecapTabs
             recapStatus={data.recap_status || "none"}
             recapUrl={data.recap_url ?? null}
+            studyGuideHtml={data.recap_transcript_html ?? null}
             onTrigger={async () => {
               try {
                 const res = await authFetch(`/api/v1/curricula/${data.id}/recap`, { method: "POST" });
@@ -330,14 +461,6 @@ export default function CurriculumPage() {
               }
             }}
           />
-
-          {/* Study Guide Document */}
-          {data.recap_transcript_html && (
-            <div className="study-guide-content bg-white p-8 rounded-[2rem] border border-ink/10 shadow-sm mt-4">
-              <h2 className="font-display text-2xl font-bold text-ink mb-6">Study Guide</h2>
-              <div dangerouslySetInnerHTML={{ __html: data.recap_transcript_html }} />
-            </div>
-          )}
         </div>
       </div>
 

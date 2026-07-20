@@ -125,6 +125,26 @@ export default function CurriculumCard({
           </div>
         )}
 
+        {/* Progress bar (Feature 9) — real watch-completion % for ready courses.
+            Tied to the watch-tracking data from Feature 7 via the stats/list
+            endpoints. Hidden until the curriculum is ready. */}
+        {isReady && typeof curriculum.progress === "number" && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-[11px] font-medium text-ink-soft">
+              <span>Progress</span>
+              <span>{Math.round(curriculum.progress)}%</span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-ink/10">
+              <motion.div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-purple-600"
+                initial={{ width: 0 }}
+                animate={{ width: `${Math.min(100, Math.max(0, curriculum.progress))}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+              />
+            </div>
+          </div>
+        )}
+
         <div className="flex-1" />
 
         {/* CTA */}

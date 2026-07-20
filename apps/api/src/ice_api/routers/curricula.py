@@ -461,6 +461,35 @@ async def list_curricula(
     stmt = select(Curriculum).where(Curriculum.tenant_id == tenant_id).order_by(Curriculum.created_at.desc())
     result = await session.execute(stmt)
     curricula = result.scalars().all()
+
+    # Feature 9 — per-card completion %. Derived from the learner's furthest
+    # watched timestamp (Session.max_watched_ts) over the curriculum duration.
+    # Best-effort: falls back to 0 when there is no session/duration yet, and
+    # never fails the list response (max_watched_ts is an additive column).
+    progress_map: Dict[int, float] = {}
+    with contextlib.suppress(Exception):
+        cur_ids = [c.id for c in curricula]
+        if cur_ids:
+            sess_rows = (
+                await session.execute(
+                    select(
+                        Session.curriculum_id,
+                        func.max(func.coalesce(Session.max_watched_ts, 0.0)),
+                    )
+                    .where(
+                        Session.user_id == current_user.id,
+                        Session.curriculum_id.in_(cur_ids),
+                    )
+                    .group_by(Session.curriculum_id)
+                )
+            ).all()
+            watched_by_cur = {int(cid): float(mw or 0.0) for cid, mw in sess_rows}
+            for c in curricula:
+                dur = float(c.duration or 0.0)
+                watched = watched_by_cur.get(c.id, 0.0)
+                if dur > 0:
+                    progress_map[c.id] = max(0.0, min(100.0, round(watched / dur * 100)))
+
     return [
         {
             "id": c.id,
@@ -469,6 +498,7 @@ async def list_curricula(
             "recap_status": c.recap_status,
             "created_at": c.created_at.isoformat() if c.created_at else None,
             "ready_at": c.ready_at.isoformat() if c.ready_at else None,
+            "progress": progress_map.get(c.id, 0.0),
         }
         for c in curricula
     ]
