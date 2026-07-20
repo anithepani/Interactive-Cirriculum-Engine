@@ -188,6 +188,12 @@ class Session(Base):
     started_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
     resume_ts = Column(Float, default=0.0)
+    # ── Block B: granular watch tracking (Feature 7) ──────────────────────
+    # Additive nullable columns. ``max_watched_ts`` is the furthest validated
+    # second (anti-scrub + resume); ``watched_seconds`` is real accumulated
+    # watch-time from heartbeat deltas (powers "Hours Learned").
+    max_watched_ts = Column(Float, nullable=True, server_default="0", default=0.0)
+    watched_seconds = Column(Float, nullable=True, server_default="0", default=0.0)
 
 
 class SessionEvent(Base):

@@ -28,6 +28,7 @@ from ice_api.models import (
     Exercise,
     User,
     SkillModel,
+    Session,
 )
 from ice_api.process import process_video, trigger_recap
 
@@ -297,6 +298,15 @@ class CurriculumCreate(BaseModel):
 class EvaluateRequest(BaseModel):
     checkpoint_id: int
     answer: str
+
+
+class ProgressPing(BaseModel):
+    # Current playhead position (seconds).
+    position: float = 0.0
+    # Highest contiguous timestamp the learner has legitimately watched.
+    max_watched: float = 0.0
+    # Watch-time accrued since the last ping (seconds of actual playback).
+    watched_delta: float = 0.0
 
 
 def _exercise_payload(exercise: Optional[Exercise]) -> Optional[Dict[str, Any]]:
@@ -693,6 +703,84 @@ async def delete_curriculum(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _get_or_create_session(
+    session: AsyncSession, user_id: int, curriculum_id: int
+):
+    """Return the learner's Session row for this curriculum, creating it once."""
+    stmt = select(Session).where(
+        Session.user_id == user_id,
+        Session.curriculum_id == curriculum_id,
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        row = Session(user_id=user_id, curriculum_id=curriculum_id, resume_ts=0.0)
+        session.add(row)
+        await session.flush()
+    return row
+
+
+@router.get("/{curriculum_id}/progress", response_model=Dict[str, Any])
+async def get_progress(
+    curriculum_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return the learner's resume position + max-watched timestamp so the
+    player can resume where they left off and enforce the anti-scrub ceiling
+    (Feature 7)."""
+    set_tenant_context(str(current_user.tenant_id))
+    stmt = select(Session).where(
+        Session.user_id == current_user.id,
+        Session.curriculum_id == curriculum_id,
+    )
+    row = (await session.execute(stmt)).scalars().first()
+    if row is None:
+        return {"resume_ts": 0.0, "max_watched_ts": 0.0, "watched_seconds": 0.0}
+    return {
+        "resume_ts": float(row.resume_ts or 0.0),
+        "max_watched_ts": float(getattr(row, "max_watched_ts", 0.0) or 0.0),
+        "watched_seconds": float(getattr(row, "watched_seconds", 0.0) or 0.0),
+    }
+
+
+@router.post("/{curriculum_id}/progress", response_model=Dict[str, Any])
+async def post_progress(
+    curriculum_id: int,
+    ping: ProgressPing,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Heartbeat: persist playback position + accumulate real watch-time.
+
+    ``watched_seconds`` accrues from the per-ping ``watched_delta`` (actual
+    playback time) rather than crediting the full video length, so dashboard
+    hours reflect genuine engagement (Feature 7). ``max_watched_ts`` is
+    monotonic — it only ever increases — and backs the forward-scrub lockout.
+    """
+    set_tenant_context(str(current_user.tenant_id))
+    try:
+        row = await _get_or_create_session(session, current_user.id, curriculum_id)
+        row.resume_ts = max(0.0, float(ping.position or 0.0))
+        prior_max = float(getattr(row, "max_watched_ts", 0.0) or 0.0)
+        new_max = max(prior_max, float(ping.max_watched or 0.0), row.resume_ts)
+        with contextlib.suppress(Exception):
+            row.max_watched_ts = new_max
+            delta = max(0.0, float(ping.watched_delta or 0.0))
+            # Clamp a single delta so a backgrounded tab can't inflate hours.
+            delta = min(delta, 60.0)
+            row.watched_seconds = float(getattr(row, "watched_seconds", 0.0) or 0.0) + delta
+        await session.commit()
+        return {
+            "resume_ts": row.resume_ts,
+            "max_watched_ts": float(getattr(row, "max_watched_ts", new_max) or new_max),
+            "watched_seconds": float(getattr(row, "watched_seconds", 0.0) or 0.0),
+        }
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"post_progress error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to save progress")
+
+
 @router.get("/{curriculum_id}", response_model=Dict[str, Any])
 async def get_curriculum(
     curriculum_id: int,
@@ -755,6 +843,7 @@ async def get_curriculum(
             "recap_transcript_html": curriculum.recap_transcript_html,
             "ready_at": curriculum.ready_at.isoformat() if curriculum.ready_at else None,
             "video_url": curriculum.source_ref,
+            "duration": curriculum.duration,
             "segments": [
                 {
                     "id": seg.id,
