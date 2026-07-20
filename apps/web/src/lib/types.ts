@@ -22,6 +22,10 @@ export interface Checkpoint {
   exercise_type: string;
   difficulty: number;
   exercise?: ExercisePayload | null;
+  // Persisted attempt state (hydrated from the backend on load) so markers +
+  // locked review survive reloads.
+  status?: "correct" | "incorrect" | null;
+  submitted_answer?: string | null;
 }
 
 export interface CurriculumDetail {
@@ -53,6 +57,9 @@ export interface ExercisePayload {
   type?: string;
   question?: string;
   prompt?: string;
+  // Supporting code snippet / problem context shown alongside the prompt
+  // (extracted from the instructor's screen via OCR, when available).
+  context?: string;
   options?: string[];
   answer_index?: number;
   answer_idx?: number;

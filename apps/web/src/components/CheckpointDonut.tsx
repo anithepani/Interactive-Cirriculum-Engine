@@ -22,9 +22,9 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 export default function CheckpointDonut({ checkpoints, statusMap = {} }: CheckpointDonutProps) {
   const total = checkpoints.length;
-  const answered = checkpoints.filter(
-    (cp) => statusMap[cp.id] === "correct" || statusMap[cp.id] === "incorrect"
-  ).length;
+  const correct = checkpoints.filter((cp) => statusMap[cp.id] === "correct").length;
+  const incorrect = checkpoints.filter((cp) => statusMap[cp.id] === "incorrect").length;
+  const answered = correct + incorrect;
 
   if (total === 0) {
     return (
@@ -84,6 +84,13 @@ export default function CheckpointDonut({ checkpoints, statusMap = {} }: Checkpo
       <div className="flex flex-col leading-tight">
         <span className="text-sm font-semibold text-white">{answered}/{total}</span>
         <span className="text-[10px] uppercase tracking-wider text-gray-400">answered</span>
+        {answered > 0 && (
+          <span className="text-[10px] mt-0.5">
+            <span className="text-green-400">{correct} correct</span>
+            <span className="text-gray-500"> · </span>
+            <span className="text-red-400">{incorrect} wrong</span>
+          </span>
+        )}
       </div>
     </div>
   );

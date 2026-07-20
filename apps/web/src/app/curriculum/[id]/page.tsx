@@ -68,6 +68,30 @@ export default function CurriculumPage() {
     checkpointsRef.current = checkpoints;
   }, [checkpoints]);
 
+  // Hydrate the in-memory status/submission maps from the backend-persisted
+  // attempts (Answer 2) so the donut markers + locked review survive reloads.
+  // Backend is the source of truth; we merge (never clobber) an in-session
+  // answer the learner just submitted with the same run.
+  useEffect(() => {
+    if (!checkpoints.length) return;
+    const hydratedStatus: StatusMap = {};
+    const hydratedSubmissions: Record<string | number, string> = {};
+    for (const cp of checkpoints) {
+      if (cp.status === "correct" || cp.status === "incorrect") {
+        hydratedStatus[cp.id] = cp.status;
+      }
+      if (typeof cp.submitted_answer === "string" && cp.submitted_answer.length) {
+        hydratedSubmissions[cp.id] = cp.submitted_answer;
+      }
+    }
+    if (Object.keys(hydratedStatus).length) {
+      setStatusMap((prev) => ({ ...hydratedStatus, ...prev }));
+    }
+    if (Object.keys(hydratedSubmissions).length) {
+      setSubmissionMap((prev) => ({ ...hydratedSubmissions, ...prev }));
+    }
+  }, [checkpoints]);
+
   const openExerciseModal = useCallback(
     (checkpoint: Checkpoint, index: number) => {
       // Guard: if the checkpoint has no exercise data, don't open the modal

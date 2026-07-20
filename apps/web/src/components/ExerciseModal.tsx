@@ -254,6 +254,20 @@ export default function ExerciseModal({
     return null;
   };
 
+  // The supporting code snippet extracted from the lesson (M3 OCR -> exercise
+  // `context`). Shown read-only for ANY exercise type when present, so learners
+  // have the code they're reasoning about. Absent for pure-text MCQs.
+  const renderContext = () => {
+    const code = exercise.context;
+    if (!code || !code.trim()) return null;
+    return (
+      <div className="mb-4">
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1 text-slate-400">Code snippet</div>
+        <pre className="max-h-56 overflow-auto rounded-lg bg-black/80 border border-white/10 p-3 font-mono text-xs text-slate-200 whitespace-pre-wrap">{code}</pre>
+      </div>
+    );
+  };
+
   const renderAnswerArea = () => {
     if (isMcq) {
       const correctIdx = exercise.answer_idx ?? exercise.answer_index ?? -1;
@@ -452,6 +466,7 @@ export default function ExerciseModal({
         </div>
 
         {renderQuestion()}
+        {renderContext()}
         {renderAnswerArea()}
         {renderOutputWindow()}
 

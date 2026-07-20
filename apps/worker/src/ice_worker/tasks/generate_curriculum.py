@@ -118,6 +118,21 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     except Exception as e:
         logger.warning(f"M3 Visual Extraction failed: {e}. Falling back to transcript-only mode.")
 
+    # Observability (Fix 3): surface how many visual items — and specifically
+    # code regions (OCR) — vision produced. Empty code counts explain why
+    # coding/debug exercises get no `context` snippet (e.g. AV1 decode issues).
+    def _vi_type(vi) -> str:
+        t = vi.get("type") if isinstance(vi, dict) else getattr(vi, "type", None)
+        return str(getattr(t, "value", t) or "").lower()
+
+    _code_items = sum(1 for vi in visual_items if _vi_type(vi) == "code")
+    logger.info(
+        "M3 visuals: %d items (%d code regions) for curriculum %s",
+        len(visual_items),
+        _code_items,
+        curriculum_id,
+    )
+
     with contextlib.suppress(OSError):
         os.remove(video_path)
 

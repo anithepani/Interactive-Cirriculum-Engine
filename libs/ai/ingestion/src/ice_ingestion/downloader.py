@@ -55,8 +55,19 @@ def _probe(url: str) -> dict[str, Any]:
 def _download_video(url: str, out_dir: str) -> str:
     """Download the best video+audio stream; return the path to the downloaded file."""
     outtmpl = os.path.join(out_dir, "source.%(ext)s")
+    # Prefer H.264 (avc1) video: many YouTube streams default to AV1, which
+    # fails to decode on CPU/WSL hardware ("Your platform doesn't support
+    # hardware accelerated AV1 decoding" -> "Get current frame error"),
+    # starving M3 vision/OCR of frames (and coding/debug exercises of code
+    # context). The selector prefers avc1, then any non-AV1 mp4, then falls
+    # back to the previous best-mp4/best chain so downloads never fail.
     opts = {
-        "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+        "format": (
+            "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4][vcodec!*=av01]+bestaudio[ext=m4a]/"
+            "best[ext=mp4][vcodec!*=av01]/"
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+        ),
         "outtmpl": outtmpl,
         "quiet": True,
         "no_warnings": True,

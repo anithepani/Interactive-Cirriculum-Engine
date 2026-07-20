@@ -228,6 +228,30 @@ class SkillModel(Base):
     __table_args__ = (UniqueConstraint("user_id", "concept_id"),)
 
 
+class CheckpointAttempt(Base):
+    """Per-(user, checkpoint) answer state, so the donut + locked review mode
+    survive a page reload (Fix 2).
+
+    One row per learner per checkpoint. ``status`` is "correct" | "incorrect".
+    ``answer`` stores the learner's submitted answer so the locked editor can
+    be re-hydrated on reopen. Once a row exists it is treated as final: the
+    checkpoint is locked and cannot be re-submitted.
+    """
+
+    __tablename__ = "checkpoint_attempts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    checkpoint_id = Column(Integer, ForeignKey("checkpoints.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String, nullable=False)  # "correct" | "incorrect"
+    answer = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        UniqueConstraint("user_id", "checkpoint_id"),
+        Index("ix_checkpoint_attempts_user", "user_id"),
+    )
+
+
 class PromptVersion(Base):
     __tablename__ = "prompt_versions"
     id = Column(Integer, primary_key=True, autoincrement=True)

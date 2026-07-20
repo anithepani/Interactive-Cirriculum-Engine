@@ -240,6 +240,50 @@ async def _update_skill_model(
             await session.rollback()
 
 
+async def _get_checkpoint_attempt(
+    session: AsyncSession, user_id: int, checkpoint_id: int
+):
+    """Return the learner's persisted CheckpointAttempt row, or None."""
+    from ice_api.models import CheckpointAttempt
+
+    stmt = select(CheckpointAttempt).where(
+        CheckpointAttempt.user_id == user_id,
+        CheckpointAttempt.checkpoint_id == checkpoint_id,
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def _record_checkpoint_attempt(
+    session: AsyncSession,
+    user_id: int,
+    checkpoint_id: int,
+    passed: bool,
+    answer: str,
+) -> None:
+    """Persist the first attempt's status + answer so the checkpoint locks
+    across reloads (Answer 2). Idempotent: a second call is ignored so the
+    original attempt is never overwritten (answers are locked after the
+    first submission)."""
+    from ice_api.models import CheckpointAttempt
+
+    try:
+        existing = await _get_checkpoint_attempt(session, user_id, checkpoint_id)
+        if existing is not None:
+            return  # locked: keep the first attempt
+        row = CheckpointAttempt(
+            user_id=user_id,
+            checkpoint_id=checkpoint_id,
+            status="correct" if passed else "incorrect",
+            answer=answer,
+        )
+        session.add(row)
+        await session.commit()
+    except Exception as exc:  # pragma: no cover - never break eval response
+        logger.warning("checkpoint_attempt record skipped: %s", exc)
+        with contextlib.suppress(Exception):
+            await session.rollback()
+
+
 router = APIRouter(prefix="/api/v1/curricula", tags=["curricula"])
 
 
@@ -347,6 +391,19 @@ async def evaluate(
         exercise = ex_res.scalar_one_or_none()
 
         answer = (payload.answer or "").strip()
+
+        # Answers lock after the first attempt (Answer 2). If the learner has
+        # already submitted this checkpoint, return the persisted verdict
+        # instead of re-grading — this survives reloads and blocks re-dos.
+        prior = await _get_checkpoint_attempt(session, current_user.id, cp.id)
+        if prior is not None:
+            return {
+                "status": "ok",
+                "passed": prior.status == "correct",
+                "locked": True,
+                "answer": prior.answer or "",
+            }
+
         if exercise is None:
             # No exercise generated yet; fall back to non-empty check.
             return {"status": "ok", "passed": bool(answer)}
@@ -392,6 +449,11 @@ async def evaluate(
         # never breaks the eval response). M10 adjusts next-checkpoint difficulty.
         await _update_skill_model(
             session, current_user.id, cp, exercise, passed
+        )
+
+        # Persist the attempt so the marker + locked state survive reloads.
+        await _record_checkpoint_attempt(
+            session, current_user.id, cp.id, passed, answer
         )
 
         return {"status": "ok", "passed": passed, **extra}
@@ -499,6 +561,19 @@ async def get_curriculum(
         else:
             exercise_map = {}
 
+        # Fetch this learner's persisted checkpoint attempts (Answer 2) so the
+        # frontend can hydrate the donut/markers + locked review after reload.
+        attempt_map: Dict[int, Any] = {}
+        if checkpoints:
+            from ice_api.models import CheckpointAttempt
+
+            att_stmt = select(CheckpointAttempt).where(
+                CheckpointAttempt.user_id == current_user.id,
+                CheckpointAttempt.checkpoint_id.in_(cp_ids),
+            )
+            att_result = await session.execute(att_stmt)
+            attempt_map = {a.checkpoint_id: a for a in att_result.scalars().all()}
+
         return {
             "id": curriculum.id,
             "title": curriculum.title,
@@ -537,6 +612,12 @@ async def get_curriculum(
                     "exercise_type": cp.exercise_type,
                     "difficulty": cp.difficulty,
                     "exercise": _exercise_payload(exercise_map.get(cp.id)),
+                    # Persisted attempt state (Answer 2): status hydrates the
+                    # donut markers; submitted_answer pre-fills locked review.
+                    "status": (attempt_map[cp.id].status if cp.id in attempt_map else None),
+                    "submitted_answer": (
+                        attempt_map[cp.id].answer if cp.id in attempt_map else None
+                    ),
                 }
                 for cp in checkpoints
             ],

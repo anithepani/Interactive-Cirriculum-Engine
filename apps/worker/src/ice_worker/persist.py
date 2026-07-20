@@ -251,6 +251,10 @@ async def persist_exercises(
                         "question": prompt,
                         "prompt": prompt,
                         "type": etype.value,
+                        # Code/context snippet shown alongside the prompt in the
+                        # modal (M3 OCR-extracted instructor code). None when no
+                        # code was extracted (e.g. MCQ, or vision found nothing).
+                        "context": ex.get("context"),
                     }
                     break
             row = Exercise(
