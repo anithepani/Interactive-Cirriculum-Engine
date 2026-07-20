@@ -54,17 +54,6 @@ export default function CurriculumPage() {
   const [completedSnapshot, setCompletedSnapshot] = useState<"correct" | "incorrect" | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const [activeTab, setActiveTab] = useState<"recap" | "exercises" | "guide">("recap");
-  const [showGuideBadge, setShowGuideBadge] = useState(false);
-  const prevRecapStatus = useRef(data?.recap_status);
-
-  useEffect(() => {
-    if (prevRecapStatus.current === "processing" && data?.recap_status === "ready") {
-      setShowGuideBadge(true);
-    }
-    prevRecapStatus.current = data?.recap_status;
-  }, [data?.recap_status]);
-
   const playerRef = useRef<PlayerHandle | null>(null);
   const lastTimeRef = useRef(0);
   const triggeredRef = useRef<Set<string | number>>(new Set());
@@ -220,9 +209,9 @@ export default function CurriculumPage() {
           <CheckpointDonut checkpoints={checkpoints} statusMap={statusMap} />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-          {/* Left Column: Video & Progress */}
-          <div className="lg:col-span-2 space-y-4">
+        <div className="mt-6 flex flex-col gap-6">
+          {/* Main Video & Progress */}
+          <div className="space-y-4">
             <div className="rounded-lg overflow-hidden bg-black aspect-video relative">
               {videoId ? (
                 <>
@@ -297,113 +286,30 @@ export default function CurriculumPage() {
             />
           </div>
 
-          {/* Right Column: Tabs */}
-          <div className="lg:col-span-1 rounded-[2rem] border border-ink/10 bg-white flex flex-col overflow-hidden shadow-sm lg:max-h-[700px]">
-            {/* Tab Headers */}
-            <div className="flex border-b border-ink/10">
-              <button
-                onClick={() => setActiveTab("recap")}
-                className={`flex-1 py-4 text-sm font-semibold text-center border-b-2 transition-colors ${
-                  activeTab === "recap"
-                    ? "border-indigo-600 text-indigo-600 bg-indigo-50/50"
-                    : "border-transparent text-ink-soft hover:bg-gray-50 hover:text-ink"
-                }`}
-              >
-                Video Recap
-              </button>
-              <button
-                onClick={() => setActiveTab("exercises")}
-                className={`flex-1 py-4 text-sm font-semibold text-center border-b-2 transition-colors ${
-                  activeTab === "exercises"
-                    ? "border-indigo-600 text-indigo-600 bg-indigo-50/50"
-                    : "border-transparent text-ink-soft hover:bg-gray-50 hover:text-ink"
-                }`}
-              >
-                Exercises
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("guide");
-                  setShowGuideBadge(false);
-                }}
-                className={`flex-1 py-4 text-sm font-semibold text-center border-b-2 transition-colors relative ${
-                  activeTab === "guide"
-                    ? "border-indigo-600 text-indigo-600 bg-indigo-50/50"
-                    : "border-transparent text-ink-soft hover:bg-gray-50 hover:text-ink"
-                }`}
-              >
-                Study Guide
-                {showGuideBadge && (
-                  <span className="absolute top-3 right-3 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                )}
-              </button>
+          {/* Recap Video Player */}
+          <RecapPlayer
+            curriculumId={data.id}
+            recapStatus={data.recap_status || "none"}
+            recapUrl={data.recap_url ?? null}
+            onTrigger={async () => {
+              try {
+                const res = await authFetch(`/api/v1/curricula/${data.id}/recap`, { method: "POST" });
+                if (!res.ok) throw new Error("Failed to trigger recap");
+                mutate();
+              } catch (err) {
+                console.error(err);
+                alert("Failed to start recap generation.");
+              }
+            }}
+          />
+
+          {/* Study Guide Document */}
+          {data.recap_transcript_html && (
+            <div className="study-guide-content bg-white p-8 rounded-[2rem] border border-ink/10 shadow-sm mt-4">
+              <h2 className="font-display text-2xl font-bold text-ink mb-6">Study Guide</h2>
+              <div dangerouslySetInnerHTML={{ __html: data.recap_transcript_html }} />
             </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto p-6 bg-gray-50/30">
-              {activeTab === "recap" && (
-                <RecapPlayer
-                  curriculumId={data.id}
-                  recapStatus={data.recap_status || "none"}
-                  recapUrl={data.recap_url ?? null}
-                  onTrigger={async () => {
-                    try {
-                      const res = await authFetch(`/api/v1/curricula/${data.id}/recap`, { method: "POST" });
-                      if (!res.ok) throw new Error("Failed to trigger recap");
-                      mutate();
-                    } catch (err) {
-                      console.error(err);
-                      alert("Failed to start recap generation.");
-                    }
-                  }}
-                />
-              )}
-
-              {activeTab === "exercises" && (
-                <div className="space-y-4">
-                  <h3 className="font-bold text-ink">Interactive Checkpoints</h3>
-                  {checkpoints.length === 0 ? (
-                    <p className="text-sm text-ink-soft">No exercises available for this curriculum.</p>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {checkpoints.map((cp, idx) => (
-                        <button
-                          key={cp.id}
-                          onClick={() => openExerciseModal(cp, idx)}
-                          className="text-left px-4 py-3 rounded-xl border border-ink/10 bg-white hover:border-indigo-300 hover:shadow-sm transition"
-                        >
-                          <div className="font-semibold text-sm text-ink">Checkpoint {idx + 1}</div>
-                          <div className="text-xs text-ink-soft mt-1">
-                            Time: {Math.floor(cp.ts / 60)}:{(cp.ts % 60).toString().padStart(2, "0")}
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {activeTab === "guide" && (
-                <div className="space-y-4">
-                  {data.recap_transcript_html ? (
-                    <div 
-                      className="study-guide-content bg-white p-6 rounded-2xl border border-ink/10 shadow-sm"
-                      dangerouslySetInnerHTML={{ __html: data.recap_transcript_html }}
-                    />
-                  ) : (
-                    <div className="text-center py-10 px-4">
-                      <p className="text-ink-soft text-sm">
-                        The Study Guide is generated alongside your Video Recap. Trigger the Recap to create it!
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
