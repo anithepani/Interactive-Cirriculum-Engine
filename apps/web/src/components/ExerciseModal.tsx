@@ -9,48 +9,115 @@ const MonacoEditor = dynamic(
   { ssr: false }
 );
 
+export interface RunResult {
+  passed?: boolean;
+  message?: string;
+  stdout?: string;
+  stderr?: string;
+}
+
+export interface SubmitResult {
+  passed: boolean;
+  message?: string;
+  stdout?: string;
+  stderr?: string;
+}
+
 interface ExerciseModalProps {
   isOpen: boolean;
   onClose: () => void;
   exercise: ExercisePayload;
-  onSubmit?: (answer: string) => Promise<{ passed: boolean; message?: string }>;
+  onSubmit?: (answer: string) => Promise<SubmitResult>;
+  /** Trial run against /execute (no hidden tests, no skill-model update). */
+  onRun?: (answer: string) => Promise<RunResult>;
   completedStatus?: "correct" | "incorrect" | null;
+  /** The learner's previously submitted answer (session-scoped), for review. */
+  submittedAnswer?: string | null;
 }
 
 const AUTO_CLOSE_DELAY_MS = 1500;
 
-export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, completedStatus }: ExerciseModalProps) {
+interface OutputState {
+  stdout: string;
+  stderr: string;
+  note?: string;
+}
+
+export default function ExerciseModal({
+  isOpen,
+  onClose,
+  exercise,
+  onSubmit,
+  onRun,
+  completedStatus,
+  submittedAnswer,
+}: ExerciseModalProps) {
   const [answer, setAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [result, setResult] = useState<{ passed: boolean; message?: string } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [execOutput, setExecOutput] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+  const [output, setOutput] = useState<OutputState | null>(null);
   const autoCloseTimer = useRef<NodeJS.Timeout | null>(null);
 
+  const exType = exercise.type || "";
+  const isCodeType = exType === "coding" || exType === "debug";
+  const isMcq = Boolean(exercise.options && exercise.options.length > 0);
+  const isConceptual = !isCodeType && !isMcq && Boolean(exercise.reference_answer);
+
   const alreadyAnswered = Boolean(completedStatus);
+  // Review mode: re-opening a checkpoint the learner already submitted. The
+  // editor is locked, pre-filled with their prior answer, and Run/Submit are
+  // hidden — only Close is available.
+  const reviewMode = alreadyAnswered;
   // The learner may close the modal only once they've answered (submitted) OR
   // are re-opening an already-attempted checkpoint. Auto-paused checkpoints
   // cannot be dismissed without answering, forcing active recall.
   const canClose = submitted || alreadyAnswered;
+  // Editor is read-only after submitting or when reviewing a past attempt.
+  const editorReadOnly = submitted || reviewMode;
 
   useEffect(() => {
     if (!isOpen) return;
-    const starter = exercise.starter_code || exercise.starter;
-    setAnswer(exercise.type === "coding" && starter ? starter : "");
+
+    // Seed the editor / answer:
+    //  - review mode  -> the learner's previously submitted answer
+    //  - coding       -> starter code
+    //  - debug        -> the buggy snippet they must fix
+    //  - otherwise    -> empty
+    let seed = "";
+    if (reviewMode && submittedAnswer != null) {
+      seed = submittedAnswer;
+    } else if (exType === "coding") {
+      seed = exercise.starter_code || exercise.starter || "";
+    } else if (exType === "debug") {
+      seed = exercise.buggy_code || "";
+    }
+    setAnswer(seed);
+
     setSubmitted(alreadyAnswered);
     setResult(
       alreadyAnswered
-        ? { passed: completedStatus === "correct", message: completedStatus === "correct" ? "Already answered correctly." : "Already attempted." }
+        ? {
+            passed: completedStatus === "correct",
+            message:
+              completedStatus === "correct"
+                ? "Already answered correctly."
+                : "Already attempted — review the correct answer below.",
+          }
         : null
     );
-    setExecOutput(null);
+    setOutput(null);
+    setRunning(false);
+    setLoading(false);
     return () => {
       if (autoCloseTimer.current) {
         clearTimeout(autoCloseTimer.current);
         autoCloseTimer.current = null;
       }
     };
-  }, [exercise, isOpen, completedStatus, alreadyAnswered]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exercise, isOpen, completedStatus, alreadyAnswered, submittedAnswer]);
 
   // Auto-close 1-2s after a CORRECT submission so the learner sees the
   // confirmation but isn't forced to click. Wrong answers never auto-close.
@@ -71,52 +138,52 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, com
 
   if (!isOpen) return null;
 
+  const applyOutput = (r: RunResult | SubmitResult, fallbackNote?: string) => {
+    const stdout = r.stdout ? String(r.stdout) : "";
+    const stderr = r.stderr ? String(r.stderr) : "";
+    if (stdout || stderr) {
+      setOutput({ stdout, stderr, note: fallbackNote });
+    } else if (fallbackNote) {
+      setOutput({ stdout: "", stderr: "", note: fallbackNote });
+    } else {
+      setOutput(null);
+    }
+  };
+
+  // "Run": trial execution via /execute. No hidden tests, no skill-model
+  // update, does not mark the checkpoint or lock the editor.
+  const handleRun = async () => {
+    if (!onRun || !answer) return;
+    setRunning(true);
+    setOutput(null);
+    try {
+      const r = await onRun(answer);
+      applyOutput(
+        r,
+        r.stdout || r.stderr
+          ? undefined
+          : r.passed
+          ? "Ran successfully (no output)."
+          : "Ran with no output."
+      );
+    } catch (error) {
+      setOutput({ stdout: "", stderr: (error as Error).message || "Run failed.", note: undefined });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  // "Submit": final evaluation via /evaluate (hidden tests + skill model).
   const handleSubmit = async () => {
-    if (!exercise) return;
+    if (!exercise || !onSubmit) return;
     setLoading(true);
     setResult(null);
-    setExecOutput(null);
-
-    const isCoding = exercise.type === "coding";
-
-    if (isCoding) {
-      try {
-        const response = await fetch("/api/v1/execute", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            code: answer,
-            language: exercise.language || "python",
-            stdin: "",
-          }),
-        });
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          const message = data?.detail || data?.error || data?.message || `Server error: ${response.status}`;
-          setResult({ passed: false, message });
-        } else {
-          const passed = Boolean(data?.passed);
-          const output = data?.stdout ?? data?.stderr ?? "";
-          setExecOutput(output ? String(output) : null);
-          setResult({ passed, message: output ? String(output) : passed ? "Passed successfully" : "No output" });
-        }
-      } catch (error) {
-        setResult({ passed: false, message: (error as Error).message || "Network or server error" });
-      } finally {
-        setSubmitted(true);
-        setLoading(false);
-      }
-      return;
-    }
-
-    if (!onSubmit) {
-      setLoading(false);
-      return;
-    }
+    setOutput(null);
 
     try {
       const res = await onSubmit(answer);
-      setResult(res);
+      setResult({ passed: res.passed, message: res.message });
+      applyOutput(res);
     } catch (error) {
       setResult({ passed: false, message: (error as Error).message || "Evaluation failed" });
     } finally {
@@ -133,20 +200,18 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, com
   };
 
   const renderAnswerArea = () => {
-    if (exercise.options && exercise.options.length > 0) {
-      const correctIdx =
-        exercise.answer_idx ?? exercise.answer_index ?? -1;
+    if (isMcq) {
+      const correctIdx = exercise.answer_idx ?? exercise.answer_index ?? -1;
       const correctOpt =
-        correctIdx >= 0 && correctIdx < exercise.options.length
-          ? exercise.options[correctIdx]
+        correctIdx >= 0 && correctIdx < (exercise.options as string[]).length
+          ? (exercise.options as string[])[correctIdx]
           : null;
 
       return (
         <div className="space-y-3">
-          {exercise.options.map((opt, idx) => {
+          {(exercise.options as string[]).map((opt, idx) => {
             const isCorrectOpt = opt === correctOpt;
             const isChosenOpt = answer === opt;
-            // After submission, color-code each option.
             let stateClasses = "border-white/10 bg-slate-900/80 hover:border-indigo-500/40";
             if (submitted) {
               if (isCorrectOpt) {
@@ -185,18 +250,19 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, com
       );
     }
 
-    if (exercise.reference_answer) {
+    if (isConceptual) {
       return (
         <textarea
-          className="w-full min-h-[180px] rounded-3xl border border-white/10 bg-slate-900/90 p-4 text-white outline-none placeholder:text-slate-500"
+          className="w-full min-h-[180px] rounded-3xl border border-white/10 bg-slate-900/90 p-4 text-white outline-none placeholder:text-slate-500 disabled:opacity-70"
           value={answer}
           onChange={(e) => setAnswer(e.target.value)}
           placeholder="Type your answer here..."
-          disabled={submitted}
+          disabled={editorReadOnly}
         />
       );
     }
 
+    // Code editor (coding + debug)
     return (
       <div className="h-[320px] rounded-3xl border border-white/10 bg-slate-900/90 overflow-hidden">
         <MonacoEditor
@@ -205,19 +271,68 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, com
           theme="vs-dark"
           value={answer}
           onChange={(value) => setAnswer(value || "")}
-          options={{ minimap: { enabled: false }, fontSize: 14, wordWrap: "on", readOnly: submitted }}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 14,
+            wordWrap: "on",
+            readOnly: editorReadOnly,
+          }}
         />
       </div>
     );
   };
 
+  // Hint / explanation surfaced in review mode when the learner got it wrong.
+  const renderReviewHint = () => {
+    if (!reviewMode || completedStatus !== "incorrect") return null;
+    const hint =
+      exType === "debug"
+        ? exercise.bug_explanation
+        : isConceptual
+        ? exercise.reference_answer
+        : undefined;
+    if (!hint) return null;
+    const label = exType === "debug" ? "Bug explanation" : "Reference answer";
+    return (
+      <div className="mt-4 p-3 rounded-lg bg-amber-500/15 text-amber-200 border border-amber-500/30">
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1 text-amber-300">{label}</div>
+        <div className="text-sm whitespace-pre-wrap">{hint}</div>
+      </div>
+    );
+  };
+
+  const renderOutputWindow = () => {
+    if (!output) return null;
+    return (
+      <div className="mt-4">
+        <div className="text-xs font-semibold uppercase tracking-wide mb-1 text-slate-400">Output</div>
+        <div className="max-h-48 overflow-auto rounded-lg bg-black/80 border border-white/10 p-3 font-mono text-xs">
+          {output.stdout && (
+            <pre className="whitespace-pre-wrap text-slate-200">{output.stdout}</pre>
+          )}
+          {output.stderr && (
+            <pre className="whitespace-pre-wrap text-red-400">{output.stderr}</pre>
+          )}
+          {!output.stdout && !output.stderr && output.note && (
+            <pre className="whitespace-pre-wrap text-slate-400">{output.note}</pre>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const showAutoCloseHint = submitted && result?.passed && !alreadyAnswered;
+  // Run/Submit are hidden entirely in review mode.
+  const showActions = !reviewMode && !submitted;
+  const showRun = showActions && isCodeType && Boolean(onRun);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="w-full max-w-2xl rounded-2xl bg-gray-900 p-6 border border-white/10 shadow-2xl">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white">Exercise</h2>
+          <h2 className="text-xl font-semibold text-white">
+            {reviewMode ? "Exercise Review" : "Exercise"}
+          </h2>
           {canClose && (
             <button onClick={onClose} className="text-gray-400 hover:text-white" aria-label="Close">✕</button>
           )}
@@ -225,20 +340,20 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, com
 
         {renderQuestion()}
         {renderAnswerArea()}
+        {renderOutputWindow()}
 
         {submitted && result && (
           <div className={`mt-4 p-3 rounded-lg ${result.passed ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
-            <div className="font-medium mb-2">
+            <div className="font-medium">
               {result.passed ? '✅ Correct!' : `❌ ${result.message || 'Incorrect, try again.'}`}
             </div>
-            {execOutput !== null && (
-              <pre className="bg-gray-800 text-sm p-3 rounded-md overflow-auto mt-2 text-white">{execOutput}</pre>
-            )}
             {showAutoCloseHint && (
               <div className="text-xs text-green-300/80 mt-1">Closing automatically…</div>
             )}
           </div>
         )}
+
+        {renderReviewHint()}
 
         <div className="flex justify-end gap-3 mt-4">
           {canClose && (
@@ -249,11 +364,20 @@ export default function ExerciseModal({ isOpen, onClose, exercise, onSubmit, com
               Close
             </button>
           )}
-          {!submitted && (
+          {showRun && (
+            <button
+              onClick={handleRun}
+              className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition disabled:opacity-50"
+              disabled={!answer || running || loading}
+            >
+              {running ? 'Running...' : 'Run'}
+            </button>
+          )}
+          {showActions && (
             <button
               onClick={handleSubmit}
               className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white transition disabled:opacity-50"
-              disabled={!answer || loading}
+              disabled={!answer || loading || running}
             >
               {loading ? 'Submitting...' : 'Submit'}
             </button>

@@ -62,4 +62,25 @@ export interface ExercisePayload {
   solution?: string;
   language?: string;
   min_similarity?: number;
+  // Debug exercises: the buggy snippet the learner must fix (seeds the editor).
+  buggy_code?: string;
+  tests?: string[];
+  bug_explanation?: string;
+}
+
+// Result surfaced back to the modal after a Submit (/evaluate) call. Includes
+// execution output so the modal's output window can display stdout/stderr.
+export interface ExerciseSubmitResult {
+  passed: boolean;
+  message?: string;
+  stdout?: string;
+  stderr?: string;
+}
+
+// Result of a Run (/execute) call — trial execution without hidden tests.
+export interface ExerciseRunResult {
+  passed: boolean;
+  stdout?: string;
+  stderr?: string;
+  message?: string;
 }

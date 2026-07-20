@@ -51,6 +51,10 @@ export default function CurriculumPage() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [statusMap, setStatusMap] = useState<StatusMap>({});
+  // Session-scoped store of the learner's last submitted answer per checkpoint,
+  // used to pre-fill the locked editor in Review Mode (resets on reload, like
+  // statusMap). Keyed by checkpoint id.
+  const [submissionMap, setSubmissionMap] = useState<Record<string | number, string>>({});
   const [completedSnapshot, setCompletedSnapshot] = useState<"correct" | "incorrect" | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -319,6 +323,33 @@ export default function CurriculumPage() {
           onClose={closeExerciseModal}
           exercise={selectedExercise}
           completedStatus={completedSnapshot}
+          submittedAnswer={
+            selectedCheckpointId != null ? submissionMap[selectedCheckpointId] ?? null : null
+          }
+          onRun={async (answer: string) => {
+            // Trial run only: /execute compiles + runs the code without the
+            // hidden test suite and never touches the skill model or markers.
+            const response = await fetch("/api/v1/execute", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                code: answer,
+                language: selectedExercise.language || "python",
+                stdin: "",
+              }),
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              const message =
+                payload?.detail || payload?.error || payload?.message || `Server error: ${response.status}`;
+              return { passed: false, stderr: String(message) };
+            }
+            return {
+              passed: Boolean(payload?.passed),
+              stdout: payload?.stdout ? String(payload.stdout) : "",
+              stderr: payload?.stderr ? String(payload.stderr) : "",
+            };
+          }}
           onSubmit={async (answer: string) => {
             if (selectedCheckpointId == null) return { passed: false };
             const response = await authFetch("/api/v1/curricula/evaluate", {
@@ -334,8 +365,16 @@ export default function CurriculumPage() {
                 | "correct"
                 | "incorrect",
             }));
+            // Persist the learner's answer (session-scoped) so re-opening the
+            // checkpoint shows it in locked Review Mode.
+            setSubmissionMap((prev) => ({ ...prev, [selectedCheckpointId]: answer }));
             await mutate();
-            return { passed, message: passed ? "Correct!" : "Incorrect." };
+            return {
+              passed,
+              message: passed ? "Correct!" : "Incorrect.",
+              stdout: payload?.stdout ? String(payload.stdout) : "",
+              stderr: payload?.stderr ? String(payload.stderr) : "",
+            };
           }}
         />
       )}
