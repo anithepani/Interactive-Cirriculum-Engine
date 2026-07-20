@@ -11,7 +11,7 @@ import AppLayout from "@/components/layout/AppLayout";
 import { DashboardAreaChart, DashboardDonutChart, MiniCalendar } from "@/components/dashboard/Charts";
 import { authFetcher, authFetch, getCurrentUser, type AuthUser } from "@/lib/auth";
 import { staggerContainer } from "@/lib/motion";
-import type { CurriculumSummary } from "@/lib/types";
+import type { CurriculumSummary, StatsOverview } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 /* ── Polling ──────────────────────────────────────────────────────────── */
@@ -136,8 +136,15 @@ function HeroBanner({ user }: { user: AuthUser | null }) {
 
 /* ── Statistics Row ────────────────────────────────────────────────────── */
 function StatsRow({ data }: { data: CurriculumSummary[] | undefined }) {
-  const count = data?.length || 0;
-  
+  // Live metrics from the backend (Block D). Falls back to the curricula count
+  // for the first card while the stats request is in flight so the row never
+  // renders empty.
+  const { data: stats } = useSWR<StatsOverview>("/api/v1/stats/overview", authFetcher);
+
+  const curricula = stats?.total_curricula ?? data?.length ?? 0;
+  const exercises = stats?.completed_exercises ?? 0;
+  const hours = stats?.hours_learned ?? 0;
+
   return (
     <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
       <div className="flex items-center gap-4 rounded-3xl border border-ink/5 bg-white p-5 shadow-sm">
@@ -146,7 +153,7 @@ function StatsRow({ data }: { data: CurriculumSummary[] | undefined }) {
         </div>
         <div>
           <p className="text-xs font-medium text-ink-soft uppercase tracking-wider">Curricula</p>
-          <p className="font-display text-xl font-bold text-ink">{count}</p>
+          <p className="font-display text-xl font-bold text-ink">{curricula}</p>
         </div>
       </div>
       
@@ -156,7 +163,7 @@ function StatsRow({ data }: { data: CurriculumSummary[] | undefined }) {
         </div>
         <div>
           <p className="text-xs font-medium text-ink-soft uppercase tracking-wider">Exercises Done</p>
-          <p className="font-display text-xl font-bold text-ink">{count * 3}</p>
+          <p className="font-display text-xl font-bold text-ink">{exercises}</p>
         </div>
       </div>
       
@@ -166,7 +173,7 @@ function StatsRow({ data }: { data: CurriculumSummary[] | undefined }) {
         </div>
         <div>
           <p className="text-xs font-medium text-ink-soft uppercase tracking-wider">Hours Learned</p>
-          <p className="font-display text-xl font-bold text-ink">{Math.round(count * 1.5)}</p>
+          <p className="font-display text-xl font-bold text-ink">{hours}</p>
         </div>
       </div>
     </div>

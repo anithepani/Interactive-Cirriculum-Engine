@@ -53,6 +53,25 @@ export interface CurriculumSummary {
   progress?: number;
 }
 
+// Live learner statistics (Block D) — served by /api/v1/stats/*. Replaces the
+// old hardcoded frontend heuristics (count*3 exercises, count*1.5 hours).
+export interface StatsCategory {
+  category: string;
+  count: number;
+  percent: number;
+}
+
+export interface StatsOverview {
+  total_curricula: number;
+  ready_curricula: number;
+  completed_exercises: number;
+  correct_exercises: number;
+  accuracy: number;
+  hours_learned: number;
+  watched_seconds: number;
+  categories?: StatsCategory[];
+}
+
 export interface ExercisePayload {
   type?: string;
   question?: string;

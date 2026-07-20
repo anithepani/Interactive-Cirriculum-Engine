@@ -2,11 +2,14 @@
 
 import { motion } from "framer-motion";
 import type { CurriculumSummary } from "@/lib/types";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 export function DashboardAreaChart({ data = [] }: { data: CurriculumSummary[] }) {
   // Group curricula by day of week
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  // Index of the point the pointer is currently over (drives the tooltip).
+  const [hovered, setHovered] = useState<number | null>(null);
   const stats = useMemo(() => {
     const counts = [0, 0, 0, 0, 0, 0, 0];
     data.forEach(item => {
@@ -71,7 +74,7 @@ export function DashboardAreaChart({ data = [] }: { data: CurriculumSummary[] })
             key={i}
             cx={stat.x}
             cy={stat.y}
-            r="5"
+            r={hovered === i ? 7 : 5}
             fill="#ffffff"
             stroke="#4f46e5"
             strokeWidth="3"
@@ -80,13 +83,47 @@ export function DashboardAreaChart({ data = [] }: { data: CurriculumSummary[] })
             transition={{ delay: 1 + i * 0.1, type: "spring" }}
           />
         ))}
+
+        {/* Invisible wide hit-targets so hovering anywhere in a day's column
+            reveals its tooltip, not just the 5px dot. */}
+        {stats.map((stat, i) => (
+          <rect
+            key={`hit-${i}`}
+            x={stat.x - 42}
+            y={-10}
+            width={84}
+            height={200}
+            fill="transparent"
+            style={{ cursor: "pointer" }}
+            onMouseEnter={() => setHovered(i)}
+            onMouseLeave={() => setHovered((cur) => (cur === i ? null : cur))}
+          />
+        ))}
       </svg>
-      
+
+      {/* Hover tooltip — absolutely positioned over the active data point. */}
+      {hovered !== null && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg bg-ink px-3 py-1.5 text-center shadow-lg"
+          style={{
+            left: `${(stats[hovered].x / 600) * 100}%`,
+            top: `${(stats[hovered].y / 200) * 100}%`,
+          }}
+        >
+          <p className="whitespace-nowrap text-[11px] font-semibold text-white">
+            {stats[hovered].count} {stats[hovered].count === 1 ? "curriculum" : "curricula"}
+          </p>
+          <p className="text-[10px] text-white/60">{dayNames[hovered]}</p>
+        </motion.div>
+      )}
+
       {/* X-axis labels and tooltips overlay */}
       <div className="absolute inset-0 flex justify-between">
         {stats.map((stat, i) => (
           <div key={stat.day} className="flex h-full flex-col items-center justify-between" style={{ width: '14.28%' }}>
-            {/* Tooltip value */}
+            {/* Static per-day value (kept subtle; the hover tooltip is richer) */}
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -97,7 +134,7 @@ export function DashboardAreaChart({ data = [] }: { data: CurriculumSummary[] })
             </motion.div>
             
             {/* X-axis label */}
-            <span className="mb-[-1.5rem] text-xs font-medium text-ink-soft">{stat.day}</span>
+            <span className={`mb-[-1.5rem] text-xs font-medium transition-colors ${hovered === i ? "text-indigo-600" : "text-ink-soft"}`}>{stat.day}</span>
           </div>
         ))}
       </div>
@@ -106,6 +143,7 @@ export function DashboardAreaChart({ data = [] }: { data: CurriculumSummary[] })
 }
 
 export function DashboardDonutChart({ data = [] }: { data: CurriculumSummary[] }) {
+  const [tip, setTip] = useState<string | null>(null);
   const stats = useMemo(() => {
     const total = data.length || 1; // avoid div by 0
     let completed = 0;
@@ -151,18 +189,43 @@ export function DashboardDonutChart({ data = [] }: { data: CurriculumSummary[] }
           />
         </svg>
         <div className="absolute flex flex-col items-center justify-center">
-          <span className="font-display text-3xl font-black text-ink">{stats.percent}%</span>
-          <span className="text-xs text-ink-soft">Completed</span>
+          {tip ? (
+            <span className="max-w-[7rem] text-center text-xs font-semibold text-ink">{tip}</span>
+          ) : (
+            <>
+              <span className="font-display text-3xl font-black text-ink">{stats.percent}%</span>
+              <span className="text-xs text-ink-soft">Completed</span>
+            </>
+          )}
         </div>
       </div>
       
+      {/* Legend doubles as a tooltip trigger — hover a segment label to see its
+          absolute count in the donut center. */}
       <div className="mt-4 flex w-full justify-around text-xs font-medium text-ink-soft">
-        <div className="flex items-center gap-1.5">
+        <div
+          className="flex cursor-default items-center gap-1.5"
+          onMouseEnter={() => setTip(`${stats.completed} completed`)}
+          onMouseLeave={() => setTip(null)}
+        >
           <span className="h-2.5 w-2.5 rounded-full bg-indigo-600"></span> Completed
         </div>
-        <div className="flex items-center gap-1.5">
+        <div
+          className="flex cursor-default items-center gap-1.5"
+          onMouseEnter={() => setTip(`${stats.processing} processing`)}
+          onMouseLeave={() => setTip(null)}
+        >
           <span className="h-2.5 w-2.5 rounded-full bg-ink/20"></span> Processing
         </div>
+        {stats.failed > 0 && (
+          <div
+            className="flex cursor-default items-center gap-1.5"
+            onMouseEnter={() => setTip(`${stats.failed} failed`)}
+            onMouseLeave={() => setTip(null)}
+          >
+            <span className="h-2.5 w-2.5 rounded-full bg-rose-500"></span> Failed
+          </div>
+        )}
       </div>
     </div>
   );

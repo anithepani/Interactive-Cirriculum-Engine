@@ -6,15 +6,21 @@ import { motion } from "framer-motion";
 import AppLayout from "@/components/layout/AppLayout";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { authFetcher } from "@/lib/auth";
-import type { CurriculumSummary } from "@/lib/types";
+import type { CurriculumSummary, StatsOverview } from "@/lib/types";
 import { staggerContainer } from "@/lib/motion";
 import { BookOpen, MonitorPlay, Palette, Briefcase, Brain, Code } from "lucide-react";
 
 // Intelligent category inferrence based on video title keywords
-const inferCategory = (title: string) => {
-  const t = title.toLowerCase();
-  if (t.includes("react") || t.includes("python") || t.includes("code") || t.includes("js") || t.includes("html") || t.includes("css") || t.includes("java")) {
+// Maps a backend category label (or a raw title) onto the local icon/color
+// palette. Matches the backend's category names first, then falls back to
+// keyword sniffing so the mapping still works for arbitrary titles.
+const inferCategory = (label: string) => {
+  const t = label.toLowerCase();
+  if (t.includes("program") || t.includes("react") || t.includes("python") || t.includes("code") || t.includes("js") || t.includes("html") || t.includes("css") || t.includes("java")) {
     return { name: "Programming", icon: Code, color: "text-blue-600", bg: "bg-blue-50", fill: "bg-blue-600" };
+  }
+  if (t.includes("data") || t.includes("ai") || t.includes("ml") || t.includes("machine")) {
+    return { name: "Data & AI", icon: Brain, color: "text-rose-600", bg: "bg-rose-50", fill: "bg-rose-600" };
   }
   if (t.includes("design") || t.includes("ui") || t.includes("ux") || t.includes("figma") || t.includes("photoshop")) {
     return { name: "UI/UX Design", icon: Palette, color: "text-fuchsia-600", bg: "bg-fuchsia-50", fill: "bg-fuchsia-600" };
@@ -22,39 +28,33 @@ const inferCategory = (title: string) => {
   if (t.includes("business") || t.includes("finance") || t.includes("marketing") || t.includes("money") || t.includes("startup")) {
     return { name: "Business", icon: Briefcase, color: "text-emerald-600", bg: "bg-emerald-50", fill: "bg-emerald-600" };
   }
-  if (t.includes("mind") || t.includes("psychology") || t.includes("health") || t.includes("stress") || t.includes("habit")) {
-    return { name: "Personal Growth", icon: Brain, color: "text-rose-600", bg: "bg-rose-50", fill: "bg-rose-600" };
-  }
   return { name: "General Learning", icon: MonitorPlay, color: "text-indigo-600", bg: "bg-indigo-50", fill: "bg-indigo-600" };
 };
 
 export default function ProgressPage() {
   const { data, error, isLoading } = useSWR<CurriculumSummary[]>("/api/v1/curricula", authFetcher);
+  // Live progress breakdown from the backend (Block D): real hours, exercise
+  // counts and concept-weighted categories rather than the old client-side
+  // heuristics (1.5h/course, count*3 exercises, title keywords).
+  const { data: progress } = useSWR<StatsOverview>("/api/v1/stats/progress", authFetcher);
 
   const stats = useMemo(() => {
-    if (!data) return { categories: [], totalHours: 0, completed: 0 };
-    
-    let totalHours = 0;
-    let completed = 0;
-    const categoryMap: Record<string, any> = {};
-
-    data.forEach(item => {
-      if (item.status === "ready") completed++;
-      // Assume each curriculum is roughly 1.5 hours of learning for demonstration
-      totalHours += 1.5; 
-      
-      const cat = inferCategory(item.title);
-      if (!categoryMap[cat.name]) {
-        categoryMap[cat.name] = { ...cat, count: 0, items: [] };
-      }
-      categoryMap[cat.name].count++;
-      categoryMap[cat.name].items.push(item);
+    // Map backend categories onto the local icon/color palette. `inferCategory`
+    // keys off the category label so styling stays consistent with the cards.
+    const backendCats = progress?.categories ?? [];
+    const categories = backendCats.map((c) => {
+      const meta = inferCategory(c.category);
+      return { ...meta, name: c.category, count: c.count, percent: c.percent };
     });
 
-    const categories = Object.values(categoryMap).sort((a, b) => b.count - a.count);
-    
-    return { categories, totalHours: Math.round(totalHours), completed };
-  }, [data]);
+    return {
+      categories,
+      totalHours: progress?.hours_learned ?? 0,
+      totalCurricula: progress?.total_curricula ?? data?.length ?? 0,
+      completedExercises: progress?.completed_exercises ?? 0,
+      correctExercises: progress?.correct_exercises ?? 0,
+    };
+  }, [progress, data]);
 
   return (
     <AppLayout>
@@ -85,7 +85,7 @@ export default function ProgressPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-ink-soft">Total Curricula</p>
-                    <p className="font-display text-3xl font-black text-ink">{data?.length || 0}</p>
+                    <p className="font-display text-3xl font-black text-ink">{stats.totalCurricula}</p>
                   </div>
                 </div>
               </div>
@@ -109,7 +109,7 @@ export default function ProgressPage() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-ink-soft">Completed Exercises</p>
-                    <p className="font-display text-3xl font-black text-ink">{stats.completed * 3}</p>
+                    <p className="font-display text-3xl font-black text-ink">{stats.completedExercises}</p>
                   </div>
                 </div>
               </div>
@@ -119,8 +119,9 @@ export default function ProgressPage() {
             <div>
               <h2 className="mb-6 font-display text-xl font-bold text-ink">Learning Categories</h2>
               <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                {stats.categories.map((cat: any, index: number) => {
-                  const percentage = Math.round((cat.count / (data?.length || 1)) * 100);
+                {stats.categories.map((cat, index: number) => {
+                  // Backend-supplied concept-weighted share.
+                  const percentage = Math.round(cat.percent);
                   return (
                     <motion.div 
                       key={cat.name} 
@@ -142,7 +143,7 @@ export default function ProgressPage() {
                           </div>
                           <div>
                             <h3 className="font-display font-bold text-ink">{cat.name}</h3>
-                            <p className="text-xs text-ink-soft">{cat.count} curricula</p>
+                            <p className="text-xs text-ink-soft">{cat.count} concepts</p>
                           </div>
                         </div>
                         <span className="font-display text-xl font-bold text-ink">{percentage}%</span>
