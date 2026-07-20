@@ -67,6 +67,9 @@ export interface ExercisePayload {
   // Debug exercises: the buggy snippet the learner must fix (seeds the editor).
   buggy_code?: string;
   tests?: string[];
+  // Coding exercises: visible tests appended on "Run" to stream real feedback
+  // (hidden tests stay hidden until Submit).
+  tests_visible?: string[];
   bug_explanation?: string;
 }
 

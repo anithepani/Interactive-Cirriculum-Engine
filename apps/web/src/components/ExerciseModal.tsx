@@ -66,6 +66,12 @@ export default function ExerciseModal({
   const [running, setRunning] = useState(false);
   const [output, setOutput] = useState<OutputState | null>(null);
   const autoCloseTimer = useRef<NodeJS.Timeout | null>(null);
+  // Identity of the exercise the editor was last seeded for. Seeding runs ONCE
+  // per open (per exercise identity). This prevents a mid-submit reseed: on
+  // Submit the parent flips `submittedAnswer` (and re-fetches via mutate),
+  // which previously re-fired the seed effect and clobbered the learner's code
+  // back to the starter/buggy template — the "resets to default" race (Fix 3).
+  const seededKeyRef = useRef<string | null>(null);
 
   const exType = exercise.type || "";
   const isCodeType = exType === "coding" || exType === "debug";
@@ -84,10 +90,20 @@ export default function ExerciseModal({
   // Editor is read-only after submitting or when reviewing a past attempt.
   const editorReadOnly = submitted || reviewMode;
 
+  // Seed the editor EXACTLY ONCE per open (per exercise identity). Critically,
+  // this must NOT re-run when `submittedAnswer` flips on Submit (the parent
+  // stores the answer in a session map, which would otherwise re-fire this
+  // effect and clobber the learner's code back to the starter/buggy template —
+  // the "Submit resets to default" race). We therefore key on a stable
+  // identity (type + prompt) and guard with a ref, and deliberately exclude
+  // `submittedAnswer` from the reseed trigger.
+  const openKey = isOpen ? `${exType}::${exercise.prompt ?? exercise.question ?? ""}` : null;
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || openKey == null) return;
+    if (seededKeyRef.current === openKey) return; // already seeded this open
+    seededKeyRef.current = openKey;
 
-    // Seed the editor / answer:
+    // Seed order:
     //  - review mode  -> the learner's previously submitted answer
     //  - coding       -> starter code
     //  - debug        -> the buggy snippet they must fix
@@ -117,14 +133,21 @@ export default function ExerciseModal({
     setOutput(null);
     setRunning(false);
     setLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openKey]);
+
+  // Reset the seed guard when the modal closes so the next open re-seeds.
+  useEffect(() => {
+    if (!isOpen) {
+      seededKeyRef.current = null;
+    }
     return () => {
       if (autoCloseTimer.current) {
         clearTimeout(autoCloseTimer.current);
         autoCloseTimer.current = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [exercise, isOpen, completedStatus, alreadyAnswered, submittedAnswer]);
+  }, [isOpen]);
 
   // Auto-close 1-2s after a CORRECT submission so the learner sees the
   // confirmation but isn't forced to click. Wrong answers never auto-close.
@@ -158,15 +181,24 @@ export default function ExerciseModal({
   };
 
   // "Run": trial execution via /execute. No hidden tests, no skill-model
-  // update, does not mark the checkpoint or lock the editor. Always renders
-  // stdout/stderr (incl. tracebacks) verbatim; only when BOTH are empty do we
-  // show a clear, exit-code-aware note.
+  // update, does not mark the checkpoint or lock the editor. For coding, the
+  // exercise's VISIBLE tests are appended so their assertions execute and
+  // stream real stdout/stderr feedback (hidden tests stay hidden until Submit).
+  // Always renders stdout/stderr (incl. tracebacks) verbatim; only when BOTH
+  // are empty do we show a clear, exit-code-aware note.
+  const buildRunSnippet = (code: string): string => {
+    const visible =
+      exType === "coding" ? (exercise.tests_visible || []).filter((t) => t && t.trim()) : [];
+    if (visible.length === 0) return code;
+    return `${code.replace(/\s+$/, "")}\n\n# --- visible tests ---\n${visible.join("\n")}\n`;
+  };
+
   const handleRun = async () => {
     if (!onRun || !answer) return;
     setRunning(true);
     setOutput(null);
     try {
-      const r = await onRun(answer);
+      const r = await onRun(buildRunSnippet(answer));
       const hasOutput = Boolean(r.stdout || r.stderr);
       const note = hasOutput
         ? undefined
@@ -204,6 +236,16 @@ export default function ExerciseModal({
       setLoading(false);
     }
   };
+
+  // "Incorrect review" is active both when re-opening a previously-failed
+  // checkpoint (reviewMode) AND immediately after a fresh failing submit — so
+  // the explanation drawer / diff appears right away (Fix 4) instead of only on
+  // re-open. The learner's code is the frozen `answer` (or the persisted prior
+  // answer when re-opening).
+  const incorrectReview =
+    (reviewMode && completedStatus === "incorrect") ||
+    Boolean(submitted && result && !result.passed);
+  const learnerCode = submittedAnswer != null ? submittedAnswer : answer;
 
   const renderQuestion = () => {
     if (!exercise) return null;
@@ -276,16 +318,16 @@ export default function ExerciseModal({
     }
 
     // Code editor (coding + debug).
-    // Review mode + incorrect + coding + a reference solution available ->
-    // show a side-by-side diff (learner's answer vs the correct solution) with
-    // Monaco's native red/green line highlighting. Debug has no corrected-code
-    // field, so it keeps the plain read-only editor + text bug_explanation hint.
+    // Incorrect (fresh fail or re-open review) + coding + a reference solution
+    // available -> show a side-by-side diff (learner's answer vs the correct
+    // solution) with Monaco's native red/green line highlighting. Debug has no
+    // corrected-code field, so it keeps the plain read-only editor + text
+    // bug_explanation hint.
     const showDiff =
-      reviewMode &&
-      completedStatus === "incorrect" &&
+      incorrectReview &&
       exType === "coding" &&
       Boolean(exercise.reference_solution) &&
-      submittedAnswer != null;
+      Boolean(learnerCode);
 
     if (showDiff) {
       return (
@@ -299,7 +341,7 @@ export default function ExerciseModal({
               height="100%"
               language={exercise.language || "python"}
               theme="vs-dark"
-              original={submittedAnswer || ""}
+              original={learnerCode || ""}
               modified={exercise.reference_solution || ""}
               options={{
                 minimap: { enabled: false },
@@ -334,9 +376,10 @@ export default function ExerciseModal({
     );
   };
 
-  // Hint / explanation surfaced in review mode when the learner got it wrong.
+  // Hint / explanation surfaced when the learner got it wrong — on a fresh
+  // failed submission OR when re-opening an incorrectly-answered checkpoint.
   const renderReviewHint = () => {
-    if (!reviewMode || completedStatus !== "incorrect") return null;
+    if (!incorrectReview) return null;
     const hint =
       exType === "debug"
         ? exercise.bug_explanation

@@ -97,6 +97,35 @@ def _collect_tests(data: Dict[str, Any], ex_type: str) -> list[str]:
     return [t for t in tests if t and str(t).strip()]
 
 
+def _validate_tests_against_reference(
+    tests: list[str], data: Dict[str, Any], language: str
+) -> list[str]:
+    """Drop tests that the exercise's own reference solution fails.
+
+    M7 test cases are LLM-generated and (with M8 validation gated off) can be
+    self-inconsistent — a hallucinated expected value or a wrong function
+    name/signature makes an assertion fail even 100%-correct learner code.
+    Running each test against the known-good ``reference_solution`` first and
+    keeping only the tests it passes removes those false-negatives. This is
+    purely execution-based: quote style, whitespace, and comments are
+    irrelevant because we execute, not string-compare.
+
+    When there is no reference solution, all tests are kept unchanged
+    (backward-compatible).
+    """
+    reference = str(data.get("reference_solution") or "").strip()
+    if not reference:
+        return tests
+    validated: list[str] = []
+    for test in tests:
+        ok, _out, _err = _run_code_against_test(reference, test, language)
+        if ok:
+            validated.append(test)
+        else:
+            logger.info("Dropping self-inconsistent test (reference fails it): %r", test)
+    return validated
+
+
 def _evaluate_code_submission(answer: str, data: Dict[str, Any], ex_type: str) -> Dict[str, Any]:
     """Execute learner code against hidden tests; return passed + stdout/stderr."""
     tests = _collect_tests(data, ex_type)
@@ -105,9 +134,14 @@ def _evaluate_code_submission(answer: str, data: Dict[str, Any], ex_type: str) -
     if not answer.strip():
         return {"status": "ok", "passed": False, "stdout": "", "stderr": "No code submitted."}
 
+    # Fix 1: guard against self-inconsistent LLM-generated tests by keeping only
+    # those the reference solution itself passes.
+    if tests:
+        tests = _validate_tests_against_reference(tests, data, language)
+
     if not tests:
-        # No stored tests: run the code once to surface output; pass if it runs
-        # cleanly (mirrors /execute's exit-0 semantics). Non-regressive: this is
+        # No (valid) stored tests: run the code once to surface output; pass if
+        # it runs cleanly (mirrors /execute's exit-0 semantics). Non-regressive:
         # stricter than the old "non-empty == pass" only when execution errors.
         ok, out, err = _run_code_against_test(answer, "", language)
         return {"status": "ok", "passed": ok, "stdout": out, "stderr": err}
