@@ -7,11 +7,12 @@ import YouTube from "react-youtube";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { Checkpoint, CurriculumDetail, ExercisePayload } from "@/lib/types";
 import { usePlayerStore } from "@/lib/store";
+import MediaTabs from "@/components/MediaTabs";
 import ExerciseModal from "@/components/ExerciseModal";
 import VideoProgressBar, { StatusMap } from "@/components/VideoProgressBar";
 import CheckpointDonut from "@/components/CheckpointDonut";
 import { authFetcher, authFetch } from "@/lib/auth";
-import RecapTabs from "@/components/RecapTabs";
+
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import AppLayout from "@/components/layout/AppLayout";
@@ -445,12 +446,12 @@ export default function CurriculumPage() {
             />
           </div>
 
-          {/* Recap Video + Study Guide (tabbed; hidden until recap is ready) */}
-          <RecapTabs
+          {/* Unified Supplemental Content: Cinematic Video, Recap Video, Study Guide */}
+          <MediaTabs
             recapStatus={data.recap_status || "none"}
             recapUrl={data.recap_url ?? null}
             studyGuideHtml={data.recap_transcript_html ?? null}
-            onTrigger={async () => {
+            onTriggerRecap={async () => {
               try {
                 const res = await authFetch(`/api/v1/curricula/${data.id}/recap`, { method: "POST" });
                 if (!res.ok) throw new Error("Failed to trigger recap");
@@ -458,6 +459,18 @@ export default function CurriculumPage() {
               } catch (err) {
                 console.error(err);
                 alert("Failed to start recap generation.");
+              }
+            }}
+            signalStatus={data.signal_status || "none"}
+            signalUrl={data.signal_video_url ?? null}
+            onTriggerSignal={async () => {
+              try {
+                const res = await authFetch(`/api/v1/curricula/${data.id}/signal`, { method: "POST" });
+                if (!res.ok) throw new Error("Failed to trigger signal video");
+                mutate();
+              } catch (err) {
+                console.error(err);
+                alert("Failed to start signal video generation.");
               }
             }}
           />

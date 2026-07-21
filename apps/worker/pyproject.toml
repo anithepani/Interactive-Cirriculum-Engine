@@ -5,13 +5,26 @@ description = "Celery worker - orchestrates the async generation pipeline (inges
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "ice-shared", "ice-contracts",
-    "celery>=5.4.0", "flower>=2.0.1",
+    "ice-shared",
+    "ice-contracts",
+    "celery>=5.4.0",
+    "flower>=2.0.1",
     "ice-api",
-    "ice-ingestion", "ice-transcript", "ice-vision", "ice-segmentation",
-    "ice-concept-graph", "ice-checkpoints", "ice-exercise-gen",
-    "ice-test-gen", "ice-evaluation", "ice-adaptive", "ice-progress", "ice-llm",
+    "ice-ingestion",
+    "ice-transcript",
+    "ice-vision",
+    "ice-segmentation",
+    "ice-concept-graph",
+    "ice-checkpoints",
+    "ice-exercise-gen",
+    "ice-test-gen",
+    "ice-evaluation",
+    "ice-adaptive",
+    "ice-progress",
+    "ice-llm",
     "google-generativeai>=0.5.0",
+    "edge-tts>=7.2.8",
+    "requests>=2.34.2",
 ]
 
 [build-system]

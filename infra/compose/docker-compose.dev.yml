@@ -178,6 +178,7 @@ services:
       minio-init: { condition: service_completed_successfully }
     volumes:
       - ../../:/app
+      - /app/apps/remotion/node_modules  # Prevent host Windows node_modules from shadowing Linux node_modules
       - ice_worker_venv:/opt/ice-venv
       - ice_uv_cache:/opt/uv-cache
       - ice_hf_cache:/opt/hf-cache

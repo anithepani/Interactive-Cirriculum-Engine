@@ -82,3 +82,18 @@ async def trigger_recap(
     except Exception:
         logger.exception("failed to dispatch generate_recap task")
 
+async def trigger_signal(
+    curriculum_id: Any, tenant_id: Any
+) -> None:
+    """Dispatch signal video generation to the Celery worker."""
+    try:
+        _get_sender().send_task(
+            "ice.worker.generate_signal_video",
+            args=[str(curriculum_id), str(tenant_id)],
+        )
+        logger.info(
+            "dispatched generate_signal_video: cid=%s tenant=%s",
+            curriculum_id, tenant_id,
+        )
+    except Exception:
+        logger.exception("failed to dispatch generate_signal_video task")
