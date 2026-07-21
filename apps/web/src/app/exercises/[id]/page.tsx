@@ -267,7 +267,9 @@ export default function ExerciseDetailPage() {
 
   return (
     <AppLayout>
-      <div className="mx-auto max-w-5xl">
+      {/* text-ink pins the base text color so nothing inherits MUI CssBaseline's
+          near-white body color in dark mode (Issue 1 defense-in-depth). */}
+      <div className="mx-auto max-w-5xl text-ink">
         <div className="mb-8 flex items-center gap-4">
           <button
             onClick={() => router.back()}
