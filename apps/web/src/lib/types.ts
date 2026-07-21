@@ -94,6 +94,8 @@ export interface ExercisePayload {
   min_similarity?: number;
   // Debug exercises: the buggy snippet the learner must fix (seeds the editor).
   buggy_code?: string;
+  // Debug exercises: the corrected code (reference answer shown in review).
+  fixed_code?: string;
   tests?: string[];
   // Coding exercises: visible tests appended on "Run" to stream real feedback
   // (hidden tests stay hidden until Submit).

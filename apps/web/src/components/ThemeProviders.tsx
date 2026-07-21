@@ -9,7 +9,7 @@ interface ThemeModeContextValue {
 }
 
 const ThemeModeContext = createContext<ThemeModeContextValue>({
-  mode: "dark",
+  mode: "light",
   toggleColorMode: () => {},
 });
 
@@ -18,16 +18,21 @@ export function useThemeMode() {
 }
 
 export default function ThemeProviders({ children }: { children: React.ReactNode }) {
-  const [mode, setMode] = useState<PaletteMode>("dark");
+  // The app is a light-first Tailwind design (bg-canvas / text-ink). MUI's
+  // CssBaseline was defaulting to DARK, which set body color to near-white
+  // (#f8fafc) and made text on the light pages invisible until selected
+  // (Issue 1). Default to light; users can still opt into dark via the stored
+  // preference below.
+  const [mode, setMode] = useState<PaletteMode>("light");
 
   useEffect(() => {
     const storedMode = window.localStorage.getItem("ice-theme") as PaletteMode | null;
     if (storedMode === "light" || storedMode === "dark") {
       setMode(storedMode);
-      return;
     }
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setMode(prefersDark ? "dark" : "light");
+    // No stored preference -> stay light (matches the Tailwind design system);
+    // we intentionally do NOT auto-switch to dark from the OS setting, which is
+    // what previously blanked the light review page.
   }, []);
 
   const colorMode = useMemo(

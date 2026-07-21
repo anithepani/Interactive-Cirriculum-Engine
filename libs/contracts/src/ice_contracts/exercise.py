@@ -88,6 +88,14 @@ class DebugPayload(BaseModel):
     bug_explanation: str = Field(
         ..., description="Ground-truth bug explanation (LLM-grades learner's explanation)"
     )
+    fixed_code: Optional[str] = Field(
+        None,
+        description=(
+            "The corrected version of buggy_code that passes all tests. Shown as "
+            "the reference answer in review (Issue 4). Optional for backward "
+            "compatibility with debug exercises generated before this field."
+        ),
+    )
 
 
 class ConceptualPayload(BaseModel):

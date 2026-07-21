@@ -345,10 +345,13 @@ def _build_exercise_dict(cp: dict, etype: str, payload: dict, code_str: str) -> 
             "constraints": payload.get("constraints", []),
         }
     elif etype == "debug":
+        fixed = payload.get("fixed_code", "") or ""
         envelope["debug"] = {
             "buggy_code": payload.get("buggy_code", ""),
             "tests": payload.get("tests", []),
             "bug_explanation": payload.get("bug_explanation", ""),
+            # Corrected code (Issue 4): the reference answer shown in review.
+            "fixed_code": fixed or None,
         }
     elif etype == "conceptual":
         envelope["conceptual"] = {

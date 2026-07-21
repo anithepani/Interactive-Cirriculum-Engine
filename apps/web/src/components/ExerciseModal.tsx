@@ -359,15 +359,17 @@ export default function ExerciseModal({
     }
 
     // Code editor (coding + debug).
-    // Incorrect (fresh fail or re-open review) + coding + a reference solution
+    // Incorrect (fresh fail or re-open review) + a reference/corrected solution
     // available -> show a side-by-side diff (learner's answer vs the correct
-    // solution) with Monaco's native red/green line highlighting. Debug has no
-    // corrected-code field, so it keeps the plain read-only editor + text
-    // bug_explanation hint.
+    // solution) with Monaco's native red/green line highlighting. Issue 4:
+    // debug now carries fixed_code (mirrored into reference_solution), so the
+    // diff works for debug too; legacy debug rows without it fall through to the
+    // plain read-only editor + bug_explanation hint below.
+    const referenceCode = exercise.reference_solution || exercise.fixed_code || "";
     const showDiff =
       incorrectReview &&
-      exType === "coding" &&
-      Boolean(exercise.reference_solution) &&
+      (exType === "coding" || exType === "debug") &&
+      Boolean(referenceCode) &&
       Boolean(learnerCode);
 
     if (showDiff) {
@@ -383,7 +385,7 @@ export default function ExerciseModal({
               language={exercise.language || "python"}
               theme="vs-dark"
               original={learnerCode || ""}
-              modified={exercise.reference_solution || ""}
+              modified={referenceCode}
               options={{
                 minimap: { enabled: false },
                 fontSize: 14,
