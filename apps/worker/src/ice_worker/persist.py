@@ -11,6 +11,8 @@ dev the RLS branch is a no-op; on Postgres the tenant GUC is set via
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -26,9 +28,11 @@ from ice_api.models import (  # noqa: E402
     CurriculumStatus,
     Exercise,
     ExerciseType,
+    Notification,
     Segment,
     Test,
 )
+from ice_shared import settings
 from ice_shared.db import get_session_factory, set_tenant_context
 
 logger = logging.getLogger(__name__)
@@ -50,10 +54,26 @@ def _ex_type(value: str) -> ExerciseType:
     return ExerciseType(value)
 
 
+def _publish_notification(user_id: int, payload: dict[str, Any]) -> None:
+    """Publish a notification event to Redis pub/sub (sync; run via to_thread).
+
+    Used by ``set_curriculum_status`` to push real-time ``ready``/``failed``
+    events to the SSE stream subscribed in the API process.
+    """
+    import redis as redis_sync
+
+    r = redis_sync.Redis.from_url(settings.redis.url)
+    r.publish(f"ice:notifications:{user_id}", json.dumps(payload))
+
+
 async def set_curriculum_status(
     curriculum_id: Any, tenant_id: str, status: str, *, ready: bool = False
 ) -> None:
-    """Flip the curriculum row status (queued|processing|ready|failed)."""
+    """Flip the curriculum row status (queued|processing|ready|failed).
+
+    On ``ready``/``failed`` transitions, also persist a Notification row and
+    publish to Redis pub/sub for real-time SSE delivery to the owner.
+    """
     set_tenant_context(str(tenant_id))
     factory = get_session_factory()
     async with factory() as session:
@@ -64,7 +84,33 @@ async def set_curriculum_status(
         c.status = CurriculumStatus(status)
         if ready:
             c.ready_at = datetime.now(UTC).replace(tzinfo=None)
+        pub = None
+        if status in ("ready", "failed") and c.user_id is not None:
+            ntype = "curriculum_ready" if status == "ready" else "curriculum_failed"
+            title = (
+                f"Your curriculum '{c.title}' is ready!"
+                if status == "ready"
+                else f"Your curriculum '{c.title}' failed to generate."
+            )
+            payload = {
+                "curriculum_id": int(c.id),
+                "status": status,
+                "title": c.title,
+                "ready_at": c.ready_at.isoformat() if c.ready_at else None,
+            }
+            session.add(
+                Notification(
+                    user_id=int(c.user_id),
+                    curriculum_id=int(c.id),
+                    type=ntype,
+                    title=title,
+                    payload=payload,
+                )
+            )
+            pub = (int(c.user_id), {"type": ntype, "title": title, **payload})
         await session.commit()
+    if pub is not None:
+        await asyncio.to_thread(_publish_notification, pub[0], pub[1])
 
 
 async def update_curriculum_meta(

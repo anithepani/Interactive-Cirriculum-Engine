@@ -46,6 +46,7 @@ celery_app.conf.update(
 from ice_worker.tasks.generate_curriculum import generate_curriculum  # noqa: F401
 from ice_worker.tasks.recap import generate_recap                    # noqa: F401
 from ice_worker.tasks.signal_video import generate_signal_video      # noqa: F401
+from ice_worker.tasks.support_email import send_support_email        # noqa: F401
 
 # Auto-discover task modules (fallback; explicit imports above are the
 # primary registration mechanism).
@@ -53,6 +54,7 @@ celery_app.autodiscover_tasks([
     "ice_worker.tasks.generate_curriculum",
     "ice_worker.tasks.recap",
     "ice_worker.tasks.signal_video",
+    "ice_worker.tasks.support_email",
 ])
 
 
