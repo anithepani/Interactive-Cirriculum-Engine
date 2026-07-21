@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     from_email: str = ""
+    # Support/feedback portal: destination inbox for submitted tickets. Falls
+    # back to console-log if unset (mirrors email_service dev behaviour).
+    support_email: str = ""
+    # SSE stream auth: HMAC secret for signing short-lived query tokens
+    # (EventSource cannot send Authorization headers). Falls back to jwt_secret.
+    sse_token_secret: str = ""
 
     # LLM providers (Groq is the primary Phase-0 path; OpenAI/OpenRouter are fallback)
     groq_api_key: str = ""

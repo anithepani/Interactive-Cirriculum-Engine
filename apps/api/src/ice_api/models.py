@@ -286,3 +286,22 @@ class Artifact(Base):
     kind = Column(String, nullable=False)  # "video", "audio", "frame", "transcript", "ocr"
     storage_uri = Column(String, nullable=False)
     meta = Column(JSON, nullable=True)
+
+
+class Notification(Base):
+    """User-scoped notification (curriculum-ready push, etc.). Backs the bell
+    dropdown and persists across sessions/devices. Created by the worker when a
+    pipeline flips to `ready`/`failed`, and also published to Redis pub/sub for
+    real-time SSE delivery.
+    """
+
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    curriculum_id = Column(Integer, ForeignKey("curricula.id", ondelete="CASCADE"), nullable=True)
+    type = Column(String, nullable=False)  # "curriculum_ready" | "curriculum_failed"
+    title = Column(String, nullable=False)
+    payload = Column(JSON, nullable=True)
+    read_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
