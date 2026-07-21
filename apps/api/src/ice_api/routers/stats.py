@@ -23,7 +23,7 @@ import logging
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ice_api.auth_utils import get_current_user
@@ -43,14 +43,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/stats", tags=["stats"])
 
 
-async def _total_curricula(session: AsyncSession, tenant_id: int) -> int:
-    stmt = select(func.count(Curriculum.id)).where(Curriculum.tenant_id == tenant_id)
+async def _total_curricula(session: AsyncSession, tenant_id: int, user_id: int) -> int:
+    stmt = select(func.count(Curriculum.id)).where(
+        Curriculum.tenant_id == tenant_id,
+        or_(Curriculum.user_id == user_id, Curriculum.user_id.is_(None)),
+    )
     return int((await session.execute(stmt)).scalar() or 0)
 
 
-async def _ready_curricula(session: AsyncSession, tenant_id: int) -> int:
+async def _ready_curricula(session: AsyncSession, tenant_id: int, user_id: int) -> int:
     stmt = select(func.count(Curriculum.id)).where(
         Curriculum.tenant_id == tenant_id,
+        or_(Curriculum.user_id == user_id, Curriculum.user_id.is_(None)),
         Curriculum.status == CurriculumStatus.ready,
     )
     return int((await session.execute(stmt)).scalar() or 0)
@@ -109,8 +113,8 @@ async def stats_overview(
     tenant_id = current_user.tenant_id
     set_tenant_context(str(tenant_id))
 
-    total = await _total_curricula(session, tenant_id)
-    ready = await _ready_curricula(session, tenant_id)
+    total = await _total_curricula(session, tenant_id, current_user.id)
+    ready = await _ready_curricula(session, tenant_id, current_user.id)
     attempts, correct = await _attempt_counts(session, current_user.id)
     watched = await _watched_seconds(session, current_user.id)
 
@@ -138,8 +142,8 @@ async def stats_progress(
     tenant_id = current_user.tenant_id
     set_tenant_context(str(tenant_id))
 
-    total = await _total_curricula(session, tenant_id)
-    ready = await _ready_curricula(session, tenant_id)
+    total = await _total_curricula(session, tenant_id, current_user.id)
+    ready = await _ready_curricula(session, tenant_id, current_user.id)
     attempts, correct = await _attempt_counts(session, current_user.id)
     watched = await _watched_seconds(session, current_user.id)
 
@@ -152,7 +156,13 @@ async def stats_progress(
             await session.execute(
                 select(Curriculum.title, func.count(Concept.id))
                 .join(Concept, Concept.curriculum_id == Curriculum.id)
-                .where(Curriculum.tenant_id == tenant_id)
+                .where(
+                    Curriculum.tenant_id == tenant_id,
+                    or_(
+                        Curriculum.user_id == current_user.id,
+                        Curriculum.user_id.is_(None),
+                    ),
+                )
                 .group_by(Curriculum.title)
             )
         ).all()

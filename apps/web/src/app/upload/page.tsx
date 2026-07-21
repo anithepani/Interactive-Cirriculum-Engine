@@ -70,6 +70,89 @@ function ErrorToast({
   );
 }
 
+/** Friendly modal shown when the backend rejects a duplicate YouTube video (409). */
+function DuplicateModal({
+  message,
+  curriculumId,
+  onDismiss,
+  onView,
+}: {
+  message: string;
+  curriculumId: number | null;
+  onDismiss: () => void;
+  onView: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="duplicate-modal-title"
+      onClick={onDismiss}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.94, y: 12 }}
+        transition={{ type: "spring", stiffness: 260, damping: 22 }}
+        className="w-full max-w-md rounded-[2rem] border border-ink/10 bg-white p-7 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
+            <Info className="h-5 w-5" />
+          </div>
+          <div className="flex-1">
+            <p
+              id="duplicate-modal-title"
+              className="font-display text-lg font-bold text-ink"
+            >
+              Already in your workspace
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">
+              {message}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Dismiss"
+            className="text-ink-soft/60 transition hover:text-ink"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-2.5 sm:flex-row-reverse">
+          {curriculumId !== null && (
+            <button
+              type="button"
+              onClick={onView}
+              className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r
+                         from-indigo-500 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white
+                         shadow-md shadow-indigo-200 transition hover:shadow-indigo-300"
+            >
+              Open existing curriculum
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-full border border-ink/15 px-5 py-2.5 text-sm font-medium
+                       text-ink-soft transition hover:border-ink/30 hover:text-ink"
+          >
+            Try another video
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 /** Animated indigo progress bar */
 function ProgressBar({ value }: { value: number }) {
   return (
@@ -110,6 +193,12 @@ function InfoCard({ heading, bullets }: { heading: string; bullets: string[] }) 
 }
 
 /* ── Page ─────────────────────────────────────────────────────────────────── */
+/** Details of a detected duplicate curriculum (surfaced via a friendly modal). */
+interface DuplicateInfo {
+  message: string;
+  curriculumId: number | null;
+}
+
 export default function UploadPage() {
   const [videoUrl, setVideoUrl] = useState("");
   const [draggedFile, setDraggedFile] = useState<File | null>(null);
@@ -117,13 +206,26 @@ export default function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [success, setSuccess] = useState(false);
+  const [duplicate, setDuplicate] = useState<DuplicateInfo | null>(null);
+  const [comingSoon, setComingSoon] = useState(false);
   const router = useRouter();
 
   /* ── Form submit ──────────────────────────────────────────────────────── */
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setDuplicate(null);
     setSuccess(false);
+
+    // Local file upload path is deferred (binary → MinIO → worker not built
+    // yet). The drag-and-drop zone validates the file client-side, but on
+    // submit we surface a friendly "coming soon" notice instead of silently
+    // sending only JSON. YouTube URLs proceed through the real flow below.
+    if (draggedFile && !videoUrl) {
+      setComingSoon(true);
+      return;
+    }
+
     setLoading(true);
     setProgress(10);
 
@@ -143,8 +245,44 @@ export default function UploadPage() {
       clearInterval(tick);
 
       if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Server error ${res.status}`);
+        // Try to parse a structured FastAPI error ({ detail: {...} }). A 409
+        // with code "duplicate_curriculum" gets a friendly modal instead of the
+        // raw JSON error banner.
+        let payload: unknown = null;
+        try {
+          payload = await res.json();
+        } catch {
+          payload = null;
+        }
+        const detail = (payload as { detail?: unknown })?.detail;
+
+        if (
+          res.status === 409 &&
+          detail &&
+          typeof detail === "object" &&
+          (detail as { code?: string }).code === "duplicate_curriculum"
+        ) {
+          const d = detail as { message?: string; curriculum_id?: number };
+          setProgress(0);
+          setDuplicate({
+            message:
+              d.message ?? "This video is already in your workspace.",
+            curriculumId: d.curriculum_id ?? null,
+          });
+          return;
+        }
+
+        // Fall back to a readable message for any other error shape.
+        let message = `Server error ${res.status}`;
+        if (typeof detail === "string") {
+          message = detail;
+        } else if (detail && typeof detail === "object") {
+          message =
+            (detail as { message?: string }).message ?? JSON.stringify(detail);
+        } else if (payload && typeof payload === "string") {
+          message = payload;
+        }
+        throw new Error(message);
       }
 
       const body = await res.json();
@@ -204,6 +342,36 @@ export default function UploadPage() {
           )}
         </AnimatePresence>
 
+        {/* Local-upload "coming soon" notice (binary path deferred) */}
+        <AnimatePresence>
+          {comingSoon && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              role="status"
+              className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200
+                         bg-amber-50 px-4 py-3 text-amber-800 shadow-sm"
+            >
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+              <p className="flex-1 text-sm">
+                Local file uploads are coming soon. Your file looks valid, but
+                processing uploaded videos isn&apos;t available yet — paste a
+                YouTube URL to generate a curriculum now.
+              </p>
+              <button
+                type="button"
+                onClick={() => setComingSoon(false)}
+                aria-label="Dismiss notice"
+                className="text-amber-400 transition hover:text-amber-600"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ── Success panel ────────────────────────────────────────────── */}
         <AnimatePresence mode="wait">
           {success ? (
@@ -254,9 +422,13 @@ export default function UploadPage() {
                 onFileSelect={(file) => {
                   setDraggedFile(file);
                   setVideoUrl("");
+                  setComingSoon(false);
                 }}
                 selectedFile={draggedFile}
-                onClear={() => setDraggedFile(null)}
+                onClear={() => {
+                  setDraggedFile(null);
+                  setComingSoon(false);
+                }}
                 disabled={loading}
               />
 
@@ -285,7 +457,10 @@ export default function UploadPage() {
                   value={videoUrl}
                   onChange={(e) => {
                     setVideoUrl(e.target.value);
-                    if (e.target.value) setDraggedFile(null);
+                    if (e.target.value) {
+                      setDraggedFile(null);
+                      setComingSoon(false);
+                    }
                   }}
                   placeholder="https://www.youtube.com/watch?v=…"
                   disabled={loading || !!draggedFile}
@@ -335,6 +510,11 @@ export default function UploadPage() {
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Generating curriculum…
                   </>
+                ) : draggedFile && !videoUrl ? (
+                  <>
+                    <Info className="h-4 w-4" />
+                    Local upload — coming soon
+                  </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4" />
@@ -372,6 +552,22 @@ export default function UploadPage() {
         />
       </motion.div>
       </div>
+
+      {/* ── Duplicate-video modal (409 from the backend) ─────────────────── */}
+      <AnimatePresence>
+        {duplicate && (
+          <DuplicateModal
+            message={duplicate.message}
+            curriculumId={duplicate.curriculumId}
+            onDismiss={() => setDuplicate(null)}
+            onView={() => {
+              if (duplicate.curriculumId !== null) {
+                router.push(`/curriculum/${duplicate.curriculumId}`);
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
     </AppLayout>
   );
 }

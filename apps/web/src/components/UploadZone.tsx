@@ -20,6 +20,37 @@ interface UploadZoneProps {
   disabled?: boolean;
 }
 
+/* ── Client-side validation rules (Block F) ───────────────────────────────
+ * The binary upload path (multipart → MinIO → worker) is deferred, so this is
+ * validation-only UI: we reject unsupported files before they can be selected.
+ */
+export const MAX_FILE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
+const ACCEPTED_EXTENSIONS = ["mp4", "mov", "webm", "mkv"] as const;
+const ACCEPTED_MIME = [
+  "video/mp4",
+  "video/quicktime", // .mov
+  "video/webm",
+  "video/x-matroska", // .mkv
+];
+
+/** Validate a picked/dropped file; returns an error string or null if valid. */
+export function validateVideoFile(file: File): string | null {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const extOk = (ACCEPTED_EXTENSIONS as readonly string[]).includes(ext);
+  const mimeOk = file.type === "" || ACCEPTED_MIME.includes(file.type);
+  if (!extOk || !mimeOk) {
+    return `Unsupported format “${ext || file.type || "unknown"}”. Use MP4, MOV, WebM, or MKV.`;
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    const gb = (file.size / 1024 / 1024 / 1024).toFixed(2);
+    return `File is ${gb} GB, which exceeds the 2 GB limit.`;
+  }
+  if (file.size === 0) {
+    return "That file appears to be empty.";
+  }
+  return null;
+}
+
 export default function UploadZone({
   onFileSelect,
   selectedFile,
@@ -27,7 +58,19 @@ export default function UploadZone({
   disabled = false,
 }: UploadZoneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  /** Run validation before bubbling the file up to the parent. */
+  const acceptFile = (file: File) => {
+    const err = validateVideoFile(file);
+    if (err) {
+      setValidationError(err);
+      return;
+    }
+    setValidationError(null);
+    onFileSelect(file);
+  };
 
   /* ── Drag handlers ─────────────────────────────────────────────────── */
   const handleDragEnter = (e: React.DragEvent) => {
@@ -50,7 +93,7 @@ export default function UploadZone({
     setIsDragOver(false);
     if (disabled) return;
     const file = e.dataTransfer.files?.[0];
-    if (file) onFileSelect(file);
+    if (file) acceptFile(file);
   };
 
   /* ── Click-to-browse ───────────────────────────────────────────────── */
@@ -60,7 +103,7 @@ export default function UploadZone({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) onFileSelect(file);
+    if (file) acceptFile(file);
     e.target.value = "";
   };
 
@@ -69,7 +112,7 @@ export default function UploadZone({
       <input
         ref={inputRef}
         type="file"
-        accept="video/*"
+        accept=".mp4,.mov,.webm,.mkv,video/mp4,video/quicktime,video/webm,video/x-matroska"
         className="sr-only"
         onChange={handleInputChange}
         aria-label="Upload video file"
@@ -178,6 +221,22 @@ export default function UploadZone({
           )}
         </AnimatePresence>
       </motion.div>
+
+      {/* Client-side validation error (unsupported type / too large) */}
+      <AnimatePresence>
+        {validationError && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            role="alert"
+            className="mt-2 flex items-center gap-1.5 text-xs font-medium text-rose-600"
+          >
+            <X className="h-3.5 w-3.5 shrink-0" />
+            {validationError}
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

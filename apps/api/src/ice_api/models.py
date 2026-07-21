@@ -91,6 +91,10 @@ class Curriculum(Base):
     __tablename__ = "curricula"
     id = Column(Integer, primary_key=True, autoincrement=True)
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    # Per-user ownership (Block A follow-up). Nullable + ON DELETE SET NULL so a
+    # removed user does not cascade-delete their curricula. Scopes duplicate
+    # validation to the individual learner, not the whole tenant.
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     source_type = Column(String, nullable=True)  # "youtube" or "upload"
     source_ref = Column(String, nullable=True)  # YouTube URL or file path
     content_hash = Column(String, unique=True, nullable=True)

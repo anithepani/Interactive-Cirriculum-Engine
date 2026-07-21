@@ -103,6 +103,12 @@ class _Pipeline(BaseSettings):
     checkpoint_min_start_sec: int = 60  # no checkpoints before this (s)
     checkpoint_avoid_final_sec: int = 30
     run_tests: bool = False  # gate M8 test generation (CPU dev: off by default)
+    # Caption harvesting (Block F): when True, the ingestor asks yt-dlp for the
+    # video's existing subtitles (manual first, then auto-generated) and, if
+    # found, uses them as the transcript — skipping Whisper ASR entirely for a
+    # big latency/CPU win. Falls back to ASR when no captions exist.
+    prefer_captions: bool = True
+    caption_langs: str = "en,en-US,en-GB"  # priority order for subtitle language
 
 
 class Settings(BaseSettings):

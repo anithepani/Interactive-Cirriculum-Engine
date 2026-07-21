@@ -13,7 +13,7 @@ from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from pydantic import BaseModel
 
 from ice_shared.db import get_session, set_tenant_context
@@ -338,16 +338,20 @@ def _extract_youtube_id(url: str) -> Optional[str]:
 
 
 async def _find_existing_ready_curriculum(
-    session: AsyncSession, tenant_id: int, video_id: str
+    session: AsyncSession, tenant_id: int, user_id: int, video_id: str
 ) -> Optional[Curriculum]:
-    """Return this tenant's READY curriculum for the same YouTube video, if any.
+    """Return this *user's* READY curriculum for the same YouTube video, if any.
 
+    Scoped per individual learner (``user_id``) within their tenant: two users
+    in the same tenant may each own their own instance of the same video, but a
+    single learner is blocked from creating a duplicate of one they already own.
     Matches on the video id appearing in ``source_ref`` (handles the various
     YouTube URL shapes) and only treats ``ready`` rows as duplicates so failed
     generations can be retried.
     """
     stmt = select(Curriculum).where(
         Curriculum.tenant_id == tenant_id,
+        Curriculum.user_id == user_id,
         Curriculum.status == CurriculumStatus.ready,
         Curriculum.source_ref.contains(video_id),
     )
@@ -458,7 +462,20 @@ async def list_curricula(
 ):
     tenant_id = current_user.tenant_id
     set_tenant_context(str(tenant_id))
-    stmt = select(Curriculum).where(Curriculum.tenant_id == tenant_id).order_by(Curriculum.created_at.desc())
+    # Per-user scope (Block A follow-up): show this learner's own curricula.
+    # Legacy rows with a NULL owner (pre-migration) stay visible within the
+    # tenant so nothing silently disappears after the user_id backfill.
+    stmt = (
+        select(Curriculum)
+        .where(
+            Curriculum.tenant_id == tenant_id,
+            or_(
+                Curriculum.user_id == current_user.id,
+                Curriculum.user_id.is_(None),
+            ),
+        )
+        .order_by(Curriculum.created_at.desc())
+    )
     result = await session.execute(stmt)
     curricula = result.scalars().all()
 
@@ -518,11 +535,12 @@ async def create_curriculum(
         # curriculum for the same YouTube video, block the duplicate generation
         # and let the frontend surface an informative modal. Failed curricula
         # are NOT treated as duplicates so the user can retry. Non-YouTube URLs
-        # (no extractable video id) skip the check.
+        # (no extractable video id) skip the check. Scoped to the individual
+        # user_id so two learners in a tenant can each keep their own instance.
         video_id = _extract_youtube_id(data.video_url)
         if video_id:
             existing = await _find_existing_ready_curriculum(
-                session, tenant_id, video_id
+                session, tenant_id, current_user.id, video_id
             )
             if existing is not None:
                 raise HTTPException(
@@ -539,6 +557,7 @@ async def create_curriculum(
 
         curriculum = Curriculum(
             tenant_id=tenant_id,
+            user_id=current_user.id,
             title=data.title or "Untitled",
             source_ref=data.video_url,
             source_type="youtube" if video_id else "upload",
@@ -703,11 +722,15 @@ async def delete_curriculum(
         tenant_id = current_user.tenant_id
         set_tenant_context(str(tenant_id))
 
-        # Ownership check: only the owning tenant may delete. Filtering on
-        # tenant_id (not just id) prevents cross-tenant deletion.
+        # Ownership check: only the owning user (or legacy rows with no owner)
+        # within the tenant may delete. Filtering on tenant_id prevents
+        # cross-tenant deletion; the user_id clause prevents one learner from
+        # deleting another learner's instance in a shared tenant. Legacy rows
+        # (user_id NULL, pre-migration) remain deletable by any tenant member.
         stmt = select(Curriculum).where(
             Curriculum.id == curriculum_id,
             Curriculum.tenant_id == tenant_id,
+            or_(Curriculum.user_id == current_user.id, Curriculum.user_id.is_(None)),
         )
         result = await session.execute(stmt)
         curriculum = result.scalar_one_or_none()

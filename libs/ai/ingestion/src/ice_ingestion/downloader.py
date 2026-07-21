@@ -140,6 +140,17 @@ def ingest(
             f"[{min_dur}, {max_dur}]s."
         )
 
+    # Caption harvesting (Block F): try to reuse the video's existing subtitles
+    # so the pipeline can skip Whisper ASR entirely. Never raises — returns None
+    # when disabled/unavailable, in which case ASR runs as before.
+    caption_transcript = None
+    try:
+        from ice_ingestion.captions import harvest_captions
+
+        caption_transcript = harvest_captions(video_ref)
+    except Exception as e:  # defensive: caption path must never break ingest
+        logger.info("caption harvesting errored (%s); falling back to ASR", e)
+
     with tempfile.TemporaryDirectory(prefix="ice_ingest_") as tmp:
         src = _download_video(video_ref, tmp)
         wav_path = os.path.join(tmp, "audio.wav")
@@ -169,4 +180,7 @@ def ingest(
             "title": title,
             "duration_sec": duration,
             "language_hint": language_hint,
+            # Non-None when existing YouTube captions were harvested; the worker
+            # uses this to skip Whisper ASR. Canonical transcript contract.
+            "caption_transcript": caption_transcript,
         }
