@@ -19,6 +19,39 @@
   --radius-md: 1rem;
 }
 
+/* ── Dark mode (toggled via `.dark` on <html>) ───────────────────────────
+   Swaps the design tokens so all `bg-canvas` / `text-ink` / `text-ink-soft`
+   / `border-ink/*` surfaces auto-flip. Hardcoded `bg-white` cards are
+   overridden below (higher specificity wins without !important) so we don't
+   have to touch every component. */
+.dark {
+  --bg-canvas: #0b0b0c;
+  --ink: #f4f4f4;
+  --ink-soft: #a1a1aa;
+  --accent-lime: #c6ff3d;
+  --accent-coral: #ff7b7b;
+  --accent-hotpink: #ff5fa8;
+  --accent-blue: #6b8bff;
+  --accent-orange: #ffa96b;
+  --accent-purple: #a06bff;
+}
+
+.dark .bg-white {
+  background-color: rgb(24 24 27); /* zinc-900 */
+}
+.dark .bg-slate-100 {
+  background-color: rgb(39 39 42); /* zinc-800 */
+}
+
+/* Study-guide / recap prose: hardcoded dark indigo text is invisible on a
+   dark surface — lighten in dark mode. */
+.dark .recap-summary {
+  color: #c7d2fe;
+}
+.dark .recap-summary h3 {
+  color: #a5b4fc;
+}
+
 html {
   scroll-behavior: smooth;
 }

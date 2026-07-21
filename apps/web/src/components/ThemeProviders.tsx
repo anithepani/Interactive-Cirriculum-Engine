@@ -27,9 +27,11 @@ export default function ThemeProviders({ children }: { children: React.ReactNode
 
   useEffect(() => {
     const storedMode = window.localStorage.getItem("ice-theme") as PaletteMode | null;
-    if (storedMode === "light" || storedMode === "dark") {
-      setMode(storedMode);
-    }
+    const initial: PaletteMode =
+      storedMode === "light" || storedMode === "dark" ? storedMode : "light";
+    setMode(initial);
+    // Sync the Tailwind `dark` class on <html> with the stored preference.
+    document.documentElement.classList.toggle("dark", initial === "dark");
     // No stored preference -> stay light (matches the Tailwind design system);
     // we intentionally do NOT auto-switch to dark from the OS setting, which is
     // what previously blanked the light review page.
@@ -42,6 +44,7 @@ export default function ThemeProviders({ children }: { children: React.ReactNode
         setMode((prevMode) => {
           const nextMode = prevMode === "light" ? "dark" : "light";
           window.localStorage.setItem("ice-theme", nextMode);
+          document.documentElement.classList.toggle("dark", nextMode === "dark");
           return nextMode;
         });
       },

@@ -169,7 +169,7 @@ function AnswerCell({
           {tone === "learner" ? "No answer submitted." : "No reference answer available."}
         </p>
       ) : mono ? (
-        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-ink/90 p-3 font-mono text-xs leading-relaxed text-slate-100">
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-zinc-700/50 bg-slate-900 p-3 font-mono text-xs leading-relaxed text-slate-100">
           {value}
         </pre>
       ) : (

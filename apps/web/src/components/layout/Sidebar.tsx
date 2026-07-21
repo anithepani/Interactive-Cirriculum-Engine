@@ -93,14 +93,14 @@ export default function Sidebar() {
                 isSidebarCollapsed ? "justify-center px-0" : "gap-3 px-4"
               } ${
                 isActive
-                  ? "bg-indigo-50 text-indigo-700 font-semibold"
-                  : "text-slate-600 hover:bg-slate-100"
+                  ? "bg-indigo-50 text-indigo-700 font-semibold dark:bg-indigo-950 dark:text-indigo-300"
+                  : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-zinc-800"
               }`}
             >
               {item.icon && (
                 <item.icon
                   className={`h-5 w-5 shrink-0 transition-colors ${
-                    isActive ? "text-indigo-700" : "text-slate-500 group-hover:text-slate-700"
+                    isActive ? "text-indigo-700 dark:text-indigo-300" : "text-slate-500 group-hover:text-slate-700 dark:text-slate-400 dark:group-hover:text-slate-200"
                   }`}
                 />
               )}

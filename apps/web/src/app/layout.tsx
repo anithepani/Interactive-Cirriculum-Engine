@@ -42,7 +42,15 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${spaceGrotesk.variable} ${inter.variable} ${jetbrainsMono.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var m=localStorage.getItem('ice-theme');if(m==='dark'){document.documentElement.classList.add('dark');}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-canvas font-body text-ink antialiased" suppressHydrationWarning>
         <ThemeProviders>
           <div className="flex min-h-screen flex-col bg-canvas">
