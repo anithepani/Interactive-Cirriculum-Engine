@@ -1,6 +1,7 @@
 from __future__ import annotations
 import sys
 import os
+import ast
 import subprocess
 import tempfile
 import contextlib
@@ -129,6 +130,88 @@ def _validate_tests_against_reference(
     return validated
 
 
+def _is_skeleton_code(answer: str) -> bool:
+    """True when a submission is an unimplemented stub, not a real solution.
+
+    Issue 3: skeleton bodies like ``def f(n): pass`` run cleanly (exit 0) and
+    were being marked correct. We reject a submission when EVERY function/class
+    body (and the module top level) is a no-op: only ``pass``, ``...``, a bare
+    docstring, or ``raise NotImplementedError``. Anything with real statements
+    (assignments, calls, returns with a value, loops, prints, ...) is NOT a
+    skeleton and passes this gate. Unparseable code is treated as non-skeleton
+    so the normal test path can surface the syntax error.
+    """
+    src = (answer or "").strip()
+    if not src:
+        return True
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return False  # let the test runner report the real error
+
+    def _body_is_noop(body: list[ast.stmt]) -> bool:
+        real = []
+        for node in body:
+            # A bare string expression is a docstring — ignore it.
+            if isinstance(node, ast.Expr) and isinstance(
+                getattr(node, "value", None), ast.Constant
+            ) and isinstance(node.value.value, str):
+                continue
+            if isinstance(node, ast.Pass):
+                continue
+            # `...` (Ellipsis) stub.
+            if isinstance(node, ast.Expr) and isinstance(
+                getattr(node, "value", None), ast.Constant
+            ) and node.value.value is Ellipsis:
+                continue
+            # `raise NotImplementedError` stub.
+            if isinstance(node, ast.Raise):
+                exc = node.exc
+                name = None
+                if isinstance(exc, ast.Call) and isinstance(exc.func, ast.Name):
+                    name = exc.func.id
+                elif isinstance(exc, ast.Name):
+                    name = exc.id
+                if name == "NotImplementedError":
+                    continue
+            real.append(node)
+        return len(real) == 0
+
+    funcs = [
+        n for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    if funcs:
+        # Skeleton iff every defined function is a no-op.
+        return all(_body_is_noop(fn.body) for fn in funcs)
+    # No functions defined: skeleton iff the whole module is a no-op.
+    return _body_is_noop(tree.body)
+
+
+def _differential_test(answer: str, reference: str, language: str) -> tuple[bool, str, str]:
+    """Compare learner output to the reference solution's output (Issue 3).
+
+    Used when an exercise has NO usable stored tests. We execute both the
+    learner's code and the known-good ``reference_solution`` and compare their
+    stdout. Passing requires identical output AND that the reference itself ran
+    cleanly (otherwise we can't trust the comparison). Returns
+    (passed, learner_stdout, stderr). Fail-closed: any error => not passed.
+    """
+    ref = (reference or "").strip()
+    if not ref:
+        return False, "", "NO_REFERENCE"
+    ref_ok, ref_out, _ref_err = _run_code_against_test(ref, "", language)
+    if not ref_ok:
+        # Reference doesn't run standalone (needs a driver we don't have) — we
+        # cannot differentially verify, so fail closed rather than pass blindly.
+        return False, "", "REFERENCE_NOT_RUNNABLE"
+    learner_ok, learner_out, learner_err = _run_code_against_test(answer, "", language)
+    if not learner_ok:
+        return False, learner_out, learner_err or "Runtime error."
+    passed = learner_out.strip() == ref_out.strip()
+    return passed, learner_out, "" if passed else "Output does not match the reference solution."
+
+
 def _evaluate_code_submission(answer: str, data: Dict[str, Any], ex_type: str) -> Dict[str, Any]:
     """Execute learner code against hidden tests; return passed + stdout/stderr."""
     tests = _collect_tests(data, ex_type)
@@ -137,17 +220,40 @@ def _evaluate_code_submission(answer: str, data: Dict[str, Any], ex_type: str) -
     if not answer.strip():
         return {"status": "ok", "passed": False, "stdout": "", "stderr": "No code submitted."}
 
+    # Issue 3: reject unimplemented stubs up front. `def f(n): pass` runs cleanly
+    # (exit 0) and used to be marked correct — never accept a no-op body.
+    if _is_skeleton_code(answer):
+        return {
+            "status": "ok",
+            "passed": False,
+            "stdout": "",
+            "stderr": "Submission is an empty/skeleton function — implement the solution.",
+        }
+
     # Fix 1: guard against self-inconsistent LLM-generated tests by keeping only
     # those the reference solution itself passes.
     if tests:
         tests = _validate_tests_against_reference(tests, data, language)
 
     if not tests:
-        # No (valid) stored tests: run the code once to surface output; pass if
-        # it runs cleanly (mirrors /execute's exit-0 semantics). Non-regressive:
-        # stricter than the old "non-empty == pass" only when execution errors.
-        ok, out, err = _run_code_against_test(answer, "", language)
-        return {"status": "ok", "passed": ok, "stdout": out, "stderr": err}
+        # No (valid) stored tests. Issue 3: do NOT fall back to "exit 0 == pass"
+        # (that let skeletons through). Instead differentially test against the
+        # reference solution's output; if there's no runnable reference, fail
+        # closed so an unverifiable submission is never marked correct.
+        reference = str(data.get("reference_solution") or data.get("solution") or "")
+        passed, out, err = _differential_test(answer, reference, language)
+        if err in ("NO_REFERENCE", "REFERENCE_NOT_RUNNABLE"):
+            # Surface a clear, non-misleading message; fail-closed.
+            return {
+                "status": "ok",
+                "passed": False,
+                "stdout": out,
+                "stderr": (
+                    "Could not verify this submission (no runnable tests or "
+                    "reference solution available)."
+                ),
+            }
+        return {"status": "ok", "passed": passed, "stdout": out, "stderr": err}
 
     passed_count = 0
     first_err = ""
