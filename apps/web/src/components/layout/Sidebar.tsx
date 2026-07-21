@@ -8,6 +8,7 @@ import {
   Library,
   Dumbbell,
   LineChart,
+  LifeBuoy,
   Settings,
   LogOut,
   Sparkles,
@@ -23,6 +24,7 @@ const MENU_ITEMS = [
   { label: "My Curricula", href: "/upload", icon: Library },
   { label: "Exercises", href: "/exercises", icon: Dumbbell },
   { label: "Progress", href: "/progress", icon: LineChart },
+  { label: "Support", href: "/support", icon: LifeBuoy },
   { label: "Settings", isHeader: true, className: "mt-6" },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

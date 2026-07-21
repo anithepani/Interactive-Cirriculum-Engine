@@ -1,6 +1,7 @@
 "use client";
 
 import Sidebar from "./Sidebar";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getCurrentUser, type AuthUser } from "@/lib/auth";
 import { useLayoutStore } from "@/lib/store";
@@ -54,9 +55,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               >
                 {mode === "light" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
               </button>
-              <button className="flex h-10 w-10 items-center justify-center rounded-full border border-ink/10 bg-white text-ink-soft transition hover:text-ink dark:bg-zinc-900">
+              <Link
+                href="/support"
+                aria-label="Support"
+                className="flex h-10 w-10 items-center justify-center rounded-full border border-ink/10 bg-white text-ink-soft transition hover:text-ink dark:bg-zinc-900"
+              >
                 <Mail className="h-4 w-4" />
-              </button>
+              </Link>
               <button className="flex h-10 w-10 items-center justify-center rounded-full border border-ink/10 bg-white text-ink-soft transition hover:text-ink relative dark:bg-zinc-900">
                 <Bell className="h-4 w-4" />
                 <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500"></span>
