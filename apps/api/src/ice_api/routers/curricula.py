@@ -30,7 +30,7 @@ from ice_api.models import (
     SkillModel,
     Session,
 )
-from ice_api.process import process_video, trigger_recap
+from ice_api.process import process_video, trigger_recap, trigger_signal
 
 logger = logging.getLogger(__name__)
 
@@ -894,6 +894,8 @@ async def get_curriculum(
             "recap_status": curriculum.recap_status,
             "recap_url": curriculum.recap_url,
             "recap_transcript_html": curriculum.recap_transcript_html,
+            "signal_status": curriculum.signal_status,
+            "signal_video_url": curriculum.signal_video_url,
             "ready_at": curriculum.ready_at.isoformat() if curriculum.ready_at else None,
             "video_url": curriculum.source_ref,
             "duration": curriculum.duration,
@@ -937,4 +939,27 @@ async def get_curriculum(
         }
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{curriculum_id}/signal")
+async def start_signal_video(
+    curriculum_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        set_tenant_context(str(current_user.tenant_id))
+        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        result = await session.execute(stmt)
+        c = result.scalar_one_or_none()
+        if not c:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        c.signal_status = "queued"
+        await session.commit()
+        
+        await trigger_signal(curriculum_id, current_user.tenant_id)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error starting signal video: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
