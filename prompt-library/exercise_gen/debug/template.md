@@ -28,10 +28,13 @@ Summary: {{ segment_summary }}
    same domain/terminology as the excerpt above.
 2. Write at least 1 hidden `tests` (as assert statements or function calls)
    that the **fixed** code must pass.  The buggy code must fail at least one.
-3. Write a `prompt` that frames the task for the learner (e.g. "The following
+3. Write `fixed_code` — the **corrected** version of `buggy_code` that passes
+   ALL of the `tests`. It must keep the same function/variable names so the
+   tests apply unchanged; only the bug is fixed.
+4. Write a `prompt` that frames the task for the learner (e.g. "The following
    code has a bug related to {{ concept }}. Find and fix it.").
-4. Write `bug_explanation` — the ground-truth explanation of the bug (the
+5. Write `bug_explanation` — the ground-truth explanation of the bug (the
    learner must also submit an explanation, which is LLM-graded).
-5. Set `confidence` (0.0–1.0).
+6. Set `confidence` (0.0–1.0).
 
 Return strict JSON conforming to the output schema.

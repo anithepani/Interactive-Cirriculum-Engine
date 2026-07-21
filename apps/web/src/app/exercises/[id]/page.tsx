@@ -32,6 +32,10 @@ interface ReviewRow {
   correctAnswer: string | null;
   options?: string[];
   correctOption?: string | null;
+  // Shown under the answer matrix when there's no reference code (e.g. legacy
+  // debug rows) — falls back to the bug explanation instead of a bare
+  // "No reference answer available." (Issue 4)
+  fallbackNote?: string | null;
 }
 
 /* ── Helpers ───────────────────────────────────────────────────────────── */
@@ -58,7 +62,12 @@ function deriveCorrect(cp: Checkpoint): { text: string | null; option: string | 
     return { text: ex.reference_solution || ex.solution || null, option: null };
   }
   if (type === "debug") {
-    return { text: ex.solution || ex.reference_solution || null, option: null };
+    // Issue 4: prefer the corrected code (fixed_code / reference_solution).
+    // Legacy debug rows have neither — the caller falls back to bug_explanation.
+    return {
+      text: ex.fixed_code || ex.reference_solution || ex.solution || null,
+      option: null,
+    };
   }
   // conceptual
   return { text: ex.reference_answer || null, option: null };
@@ -68,6 +77,13 @@ function toReviewRow(cp: Checkpoint, index: number): ReviewRow {
   const { text: correctAnswer, option: correctOption } = deriveCorrect(cp);
   const status: AttemptStatus =
     cp.status === "correct" ? "correct" : cp.status === "incorrect" ? "incorrect" : "unattempted";
+  // Issue 4: for debug exercises with no stored corrected code (legacy rows),
+  // surface the bug explanation as the reference instead of "No reference
+  // answer available."
+  const fallbackNote =
+    cp.exercise_type === "debug" && !correctAnswer && cp.exercise?.bug_explanation
+      ? cp.exercise.bug_explanation
+      : null;
   return {
     checkpointId: cp.id,
     index,
@@ -79,6 +95,7 @@ function toReviewRow(cp: Checkpoint, index: number): ReviewRow {
     correctAnswer,
     options: cp.exercise?.options,
     correctOption,
+    fallbackNote,
   };
 }
 
@@ -119,11 +136,13 @@ function AnswerCell({
   value,
   tone,
   mono,
+  fallbackNote,
 }: {
   label: string;
   value: string | null;
   tone: "learner" | "correct";
   mono: boolean;
+  fallbackNote?: string | null;
 }) {
   const empty = value == null || value.trim() === "";
   const toneClasses =
@@ -134,8 +153,19 @@ function AnswerCell({
       <div className={`mb-2 text-xs font-semibold uppercase tracking-wide ${labelColor}`}>
         {label}
       </div>
-      {empty ? (
-        <p className="text-sm italic text-ink-soft/70">
+      {empty && fallbackNote ? (
+        /* Issue 4: legacy debug rows without corrected code — show the bug
+           explanation as the reference instead of "No reference answer". */
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
+            Bug explanation
+          </p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink">
+            {fallbackNote}
+          </p>
+        </div>
+      ) : empty ? (
+        <p className="text-sm italic text-ink-soft">
           {tone === "learner" ? "No answer submitted." : "No reference answer available."}
         </p>
       ) : mono ? (
@@ -331,19 +361,22 @@ export default function ExerciseDetailPage() {
                     </div>
                   ) : (
                     /* Coding / debug / conceptual: side-by-side answer matrix */
-                    <div className="flex flex-col gap-4 md:flex-row">
-                      <AnswerCell
-                        label="Your answer"
-                        value={row.learnerAnswer}
-                        tone="learner"
-                        mono={isCode(row.type)}
-                      />
-                      <AnswerCell
-                        label="Correct answer"
-                        value={row.correctAnswer}
-                        tone="correct"
-                        mono={isCode(row.type)}
-                      />
+                    <div className="space-y-4">
+                      <div className="flex flex-col gap-4 md:flex-row">
+                        <AnswerCell
+                          label="Your answer"
+                          value={row.learnerAnswer}
+                          tone="learner"
+                          mono={isCode(row.type)}
+                        />
+                        <AnswerCell
+                          label="Correct answer"
+                          value={row.correctAnswer}
+                          tone="correct"
+                          mono={isCode(row.type)}
+                          fallbackNote={row.fallbackNote}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>

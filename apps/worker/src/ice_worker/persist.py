@@ -256,6 +256,12 @@ async def persist_exercises(
                         # code was extracted (e.g. MCQ, or vision found nothing).
                         "context": ex.get("context"),
                     }
+                    # Issue 4: debug exercises store the corrected code as
+                    # ``fixed_code``. Mirror it into ``reference_solution`` so the
+                    # frontend review + Monaco diff use the SAME field for coding
+                    # and debug. Harmless no-op when fixed_code is absent (legacy).
+                    if etype.value == "debug" and sub.get("fixed_code"):
+                        payload.setdefault("reference_solution", sub["fixed_code"])
                     break
             row = Exercise(
                 checkpoint_id=cp_map.get(cp_slug),
