@@ -77,6 +77,32 @@ make run-pipeline
 - **API:** http://localhost:8000  (OpenAPI docs at `/docs`)
 - **Web:** http://localhost:3000
 
+### Windows (Docker Desktop + WSL2): space-free path required
+
+Docker Desktop's WSL2 backend cannot bind-mount host paths that contain
+**spaces** (it mis-translates e.g. `.../Interactive Cirriculum Engine/...` and
+fails with `mkdir /run/desktop/mnt/host/d: file exists`). The dev stack uses
+bind mounts (`../../:/app`, `.env`, `prometheus.dev.yml`, `judge0.conf`), so it
+must be launched from a space-free path.
+
+Fix (one-time per machine): create an NTFS junction with no spaces and launch
+from it.
+
+```powershell
+# Run once (elevated not required for a junction):
+cmd /c mklink /J D:\ice "D:\Genesys_Systems\Interactive Cirriculum Engine"
+
+# Then start the stack from the junction (the helper script does this for you):
+D:\ice\dev.ps1            # up -d + status
+D:\ice\dev.ps1 down       # stop the stack
+D:\ice\dev.ps1 logs       # tail logs
+```
+
+The junction is machine-local (not committed). Containers use named volumes for
+the Python venv / node_modules, so the host `.venv` is unaffected. `make dev`
+still works **only** if `make` is invoked from a space-free path such as
+`D:\ice`.
+
 ## Development Workflow
 
 We use **trunk-based GitHub Flow** with phase release tags. See [CONTRIBUTING.md](CONTRIBUTING.md) for the branching strategy, PR rules, and the contract-first development order.

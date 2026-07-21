@@ -23,6 +23,10 @@ dev: dev-up ## Start the full dev stack (compose) in the background
 	@echo "Stack up. API: http://localhost:8000  Web: http://localhost:3000"
 
 dev-up: ## Start docker-compose dev stack
+	# Windows + Docker Desktop/WSL2: run this from a SPACE-FREE path or the bind
+	# mounts fail ("mkdir /run/desktop/mnt/host/d: file exists"). Create a
+	# junction once: `cmd /c mklink /J D:\ice "<repo path>"` and run from D:\ice
+	# (or use D:\ice\dev.ps1). See README "Windows" section.
 	docker compose -f infra/compose/docker-compose.dev.yml up -d
 
 dev-down: ## Stop docker-compose dev stack
