@@ -283,6 +283,34 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text)
 
 
+def _derive_context(etype: str, payload: dict, code_str: str) -> str | None:
+    """Decide the supporting code snippet shown alongside the exercise.
+
+    Issue 2: previously ``context`` was blindly set to the OCR-extracted
+    ``code_str`` for EVERY exercise, so irrelevant IDE/terminal dumps appeared
+    under a "CODE SNIPPET" box — even for MCQ/conceptual questions or debug
+    exercises whose prompt already embeds the code. Rules now:
+
+    - debug: the buggy code is already shown in the editor -> no separate snippet.
+    - coding: the starter code is already in the editor -> no separate snippet.
+    - mcq / conceptual: only attach the OCR code when it is substantial and not
+      already reproduced in the prompt (some questions quote the snippet inline).
+    - never attach empty/whitespace-only or trivially short OCR fragments.
+    """
+    code = (code_str or "").strip()
+    if not code or len(code) < 12:
+        return None
+    if etype in ("debug", "coding"):
+        # The relevant code lives in buggy_code / starter (the editor); a second
+        # copy of unrelated OCR would only confuse the learner.
+        return None
+    prompt = str(payload.get("prompt", "") or "")
+    # If the prompt already contains the snippet, don't duplicate it.
+    if code and code[:40] in prompt:
+        return None
+    return code
+
+
 def _build_exercise_dict(cp: dict, etype: str, payload: dict, code_str: str) -> dict:
     """Assemble the full exercise envelope from LLM payload + checkpoint metadata."""
     ex_id = "ex_" + str(cp.get("id", "unknown")) + "_" + etype
@@ -296,7 +324,7 @@ def _build_exercise_dict(cp: dict, etype: str, payload: dict, code_str: str) -> 
         "concept_id": str(cp.get("concept_id", "")),
         "difficulty": int(cp.get("difficulty", 3)),
         "prompt": payload.get("prompt", ""),
-        "context": code_str if code_str else None,
+        "context": _derive_context(etype, payload, code_str),
         "confidence": confidence,
         "validation_passed": False,
     }

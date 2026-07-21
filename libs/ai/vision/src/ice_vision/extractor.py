@@ -134,28 +134,100 @@ def _extract_frames(
     return frames
 
 
+# IDE / terminal chrome that OCR picks up from a screen recording but which is
+# NOT lesson code. If a frame is dominated by these, it's an editor screenshot
+# (file tree, menus, run output), not a code snippet worth surfacing (Issue 2).
+_IDE_METADATA_MARKERS = (
+    "main.py", "builtins", "structure", "run:", "run ", "terminal",
+    "console", "output", "explorer", "project", "navigate", "refactor",
+    "problems", "version control", "search everywhere", "process finished",
+    "exit code", ".idea", "__pycache__", "site-packages", "external libraries",
+)
+
+# Signals that a line is genuinely a line of code (not prose / a menu label).
+_CODE_TOKEN_KEYWORDS = {
+    "def", "class", "import", "return", "from", "public", "void",
+    "for", "while", "if", "elif", "else", "print", "lambda", "yield",
+    "async", "await", "try", "except", "with",
+}
+
+
+def _looks_like_code_line(line: str) -> bool:
+    """True when a single line has the shape of source code, not prose/UI text."""
+    s = line.strip()
+    if not s:
+        return False
+    words = set(s.lower().replace("(", " ").replace(":", " ").split())
+    if words & _CODE_TOKEN_KEYWORDS:
+        return True
+    # Structural signals: indented assignment/call, block-open, call syntax.
+    if line[:1] in (" ", "\t") and any(c in s for c in "=(:"):
+        return True
+    if s.endswith(":"):
+        return True
+    if "()" in s or ("(" in s and ")" in s and "=" in s):
+        return True
+    return False
+
+
+def _metadata_ratio(text: str) -> float:
+    """Fraction of non-empty lines that read as IDE/terminal chrome, not code."""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return 1.0
+    hits = sum(
+        1 for ln in lines if any(m in ln.lower() for m in _IDE_METADATA_MARKERS)
+    )
+    return hits / len(lines)
+
+
 def _classify_region(text: str, img_shape: tuple[int, ...]) -> VisualRegionType:
     text_lower = text.lower()
-    code_keywords = {"def", "class", "import", "return", "from", "public", "void"}
-    
-    words = set(text_lower.split())
-    if len(words.intersection(code_keywords)) > 0:
+
+    # An editor/terminal screenshot is dominated by IDE chrome — treat it as a
+    # SLIDE so its noisy OCR never becomes an exercise code snippet (Issue 2).
+    if _metadata_ratio(text) >= 0.4:
+        return VisualRegionType.SLIDE
+
+    # Require MULTIPLE code-shaped lines before calling a frame CODE. A single
+    # stray keyword (e.g. "import" in a menu label) is not enough — that
+    # false-positive pulled whole IDE frames in as "code".
+    code_lines = sum(1 for ln in text.splitlines() if _looks_like_code_line(ln))
+    if code_lines >= 2:
         return VisualRegionType.CODE
-    
+
     if "architecture" in text_lower or "flow" in text_lower or "diagram" in text_lower:
         return VisualRegionType.DIAGRAM
-        
+
     return VisualRegionType.SLIDE
 
 
 def _sanitize_code(text: str) -> str:
-    parser = _get_ts_parser()
-    tree = parser.parse(bytes(text, "utf8"))
-    
-    # If the root node has ERROR nodes, it might be heavily malformed, but we just return original text
-    # Here we just use tree-sitter to validate, maybe attempt to extract valid blocks if needed.
-    # For MVP, we simply return text if parsed, or text if not.
-    return text
+    """Keep only code-shaped lines, dropping interleaved IDE/terminal chrome.
+
+    OCR of an editor frame mixes real code with menu labels, the file tree, and
+    terminal output. We drop lines that read as IDE metadata or don't look like
+    code; if stripping leaves nothing useful we fall back to the original text
+    so a genuine snippet is never lost.
+    """
+    kept: list[str] = []
+    for ln in text.splitlines():
+        low = ln.lower()
+        if any(m in low for m in _IDE_METADATA_MARKERS):
+            continue
+        # Keep code-shaped lines, plus continuation lines once code has started.
+        if _looks_like_code_line(ln) or (ln.strip() and kept):
+            kept.append(ln)
+    cleaned = "\n".join(kept).strip()
+    if not cleaned:
+        return text.strip()
+    # Best-effort parse (validation only; we keep the cleaned text regardless).
+    try:
+        parser = _get_ts_parser()
+        parser.parse(bytes(cleaned, "utf8"))
+    except Exception:
+        pass
+    return cleaned
 
 
 def _ocr_single_frame(args: tuple) -> dict | None:

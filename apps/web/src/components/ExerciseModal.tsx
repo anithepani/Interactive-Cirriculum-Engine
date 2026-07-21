@@ -255,11 +255,38 @@ export default function ExerciseModal({
   };
 
   // The supporting code snippet extracted from the lesson (M3 OCR -> exercise
-  // `context`). Shown read-only for ANY exercise type when present, so learners
-  // have the code they're reasoning about. Absent for pure-text MCQs.
+  // `context`). Shown read-only when present AND relevant. Guard (Issue 2):
+  // legacy rows stored garbage OCR (IDE chrome / terminal output) or duplicated
+  // the editor's own code here, so we hide the snippet when it (a) looks like
+  // IDE/terminal metadata, (b) duplicates the buggy/starter code already in the
+  // editor, or (c) is too short to be useful.
+  const isLikelyIdeMetadata = (code: string): boolean => {
+    const markers = [
+      "main.py", "builtins", "structure", "run:", "process finished",
+      "exit code", "__pycache__", "site-packages", "external libraries",
+      "explorer", "navigate", "refactor",
+    ];
+    const lines = code.split("\n").map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return true;
+    const low = code.toLowerCase();
+    const hits = markers.filter((m) => low.includes(m)).length;
+    // Two or more distinct IDE markers => almost certainly an editor screenshot.
+    return hits >= 2;
+  };
+
+  const contextIsRelevant = (code: string): boolean => {
+    const trimmed = code.trim();
+    if (trimmed.length < 12) return false;
+    if (isLikelyIdeMetadata(trimmed)) return false;
+    // Don't repeat the code already shown in the editor (debug buggy / coding starter).
+    const editorSeed = (exercise.buggy_code || exercise.starter_code || exercise.starter || "").trim();
+    if (editorSeed && trimmed.slice(0, 40) === editorSeed.slice(0, 40)) return false;
+    return true;
+  };
+
   const renderContext = () => {
     const code = exercise.context;
-    if (!code || !code.trim()) return null;
+    if (!code || !code.trim() || !contextIsRelevant(code)) return null;
     return (
       <div className="mb-4">
         <div className="text-xs font-semibold uppercase tracking-wide mb-1 text-slate-400">Code snippet</div>
