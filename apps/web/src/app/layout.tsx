@@ -4,6 +4,7 @@ import "@/app/globals.css"; // ✅ changed to relative import
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import ThemeProviders from "@/components/ThemeProviders";
+import { NotificationsProvider } from "@/components/NotificationsProvider";
 import { PRODUCT } from "@/lib/data";
 
 // Space Grotesk supports weights: 300, 400, 500, 600, 700, variable
@@ -53,11 +54,13 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen bg-canvas font-body text-ink antialiased" suppressHydrationWarning>
         <ThemeProviders>
-          <div className="flex min-h-screen flex-col bg-canvas">
-            <Navbar />
-            <main className="flex-1 pt-16">{children}</main>
-            <Footer />
-          </div>
+          <NotificationsProvider>
+            <div className="flex min-h-screen flex-col bg-canvas">
+              <Navbar />
+              <main className="flex-1 pt-16">{children}</main>
+              <Footer />
+            </div>
+          </NotificationsProvider>
         </ThemeProviders>
       </body>
     </html>
