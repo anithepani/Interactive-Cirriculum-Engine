@@ -12,7 +12,7 @@ import traceback
 from difflib import SequenceMatcher
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from pydantic import BaseModel
@@ -683,6 +683,118 @@ async def create_curriculum(
         logger.error(f"Error in create_curriculum: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+
+@router.post("/upload", response_model=Dict[str, Any])
+async def upload_curriculum(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Ingest a locally-uploaded video file (Phase 2).
+
+    Streams the raw upload to MinIO at
+    ``tenants/<tid>/curricula/<cid>/source_video<ext>``, creates the Curriculum
+    row with ``source_type="upload"`` and ``source_ref=<s3 key>``, then
+    dispatches the same ``generate_curriculum`` pipeline the YouTube path uses —
+    the worker routes on the ref shape (S3 key → local-file ingest). The
+    uploaded object is retained in MinIO so the HTML5 player can stream it.
+    """
+    from ice_shared.s3 import get_s3_client, tenant_prefix
+    from ice_shared import settings as _settings
+
+    try:
+        tenant_id = current_user.tenant_id
+        set_tenant_context(str(tenant_id))
+
+        # ── Server-side validation: extension + size ──────────────────────
+        filename = file.filename or ""
+        ext = os.path.splitext(filename)[1].lower()
+        allowed = {
+            e.strip().lower()
+            for e in _settings.settings.pipeline.upload_allowed_exts.split(",")
+            if e.strip()
+        }
+        if ext not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unsupported file type {ext or '(none)'}. Allowed: "
+                    + ", ".join(sorted(allowed))
+                ),
+            )
+
+        max_bytes = int(_settings.settings.pipeline.upload_max_bytes)
+
+        # ── Create the curriculum row first so we have an id for the key ──
+        curriculum = Curriculum(
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            title=title or os.path.splitext(os.path.basename(filename))[0] or "Uploaded video",
+            source_type="upload",
+            source_ref=None,  # set below once the S3 key is known
+            status=CurriculumStatus.queued,
+        )
+        session.add(curriculum)
+        await session.commit()
+        await session.refresh(curriculum)
+
+        s3_key = (
+            f"{tenant_prefix(tenant_id)}curricula/{curriculum.id}/source_video{ext}"
+        )
+
+        # ── Stream the upload to a temp file in bounded chunks (size-guarded),
+        # then upload to MinIO off the event loop ─────────────────────────
+        s3 = get_s3_client()
+        bucket = _settings.settings.s3.bucket
+        tmp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                tmp_path = tmp.name
+                total = 0
+                while True:
+                    chunk = await file.read(1024 * 1024)  # 1 MiB
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=(
+                                "File exceeds the maximum allowed size "
+                                f"({max_bytes // (1024 * 1024)} MiB)."
+                            ),
+                        )
+                    tmp.write(chunk)
+            content_type = file.content_type or "application/octet-stream"
+            await asyncio.to_thread(
+                s3.upload_file,
+                tmp_path,
+                bucket,
+                s3_key,
+                {"ContentType": content_type},
+            )
+        finally:
+            if tmp_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
+
+        # Persist the resolved S3 key as the source ref, then dispatch.
+        curriculum.source_ref = s3_key
+        await session.commit()
+
+        asyncio.create_task(process_video(curriculum.id, s3_key, tenant_id))
+
+        return {"curriculum_id": curriculum.id, "status": "queued"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error in upload_curriculum: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/ping")

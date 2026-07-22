@@ -59,34 +59,61 @@ def _is_youtube_ref(video_ref: str) -> bool:
     return bool(video_ref) and bool(_YT_REF_RE.search(video_ref))
 
 
+def _is_upload_ref(video_ref: str) -> bool:
+    """True when ``video_ref`` is an S3 key for a previously-uploaded video.
+
+    The upload endpoint stores the raw file at
+    ``tenants/<tid>/curricula/<cid>/source_video<ext>`` and sets that key as the
+    curriculum's ``source_ref``. We detect it structurally (tenant-scoped key,
+    not a URL) so the worker can route it to the local-file ingest path.
+    """
+    if not video_ref:
+        return False
+    if _is_youtube_ref(video_ref):
+        return False
+    if video_ref.startswith(("http://", "https://")):
+        return False
+    return video_ref.startswith("tenants/") and "/curricula/" in video_ref
+
+
 async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     set_tenant_context(tenant_id)
     await _ensure_tables()
     await persist.set_curriculum_status(curriculum_id, tenant_id, "processing")
 
-    # Source-type guard (Block F): the real binary upload path (multipart →
-    # MinIO → local ingest) is deferred, so the only source we can actually
-    # process is a YouTube URL. If a non-YouTube ref slips through (e.g. an
-    # "upload" row whose source_ref is a bare filename), do NOT hand it to
-    # yt-dlp — that would fail with an opaque extractor error. Fail fast with a
-    # clear, user-facing reason instead.
-    if not _is_youtube_ref(video_ref):
+    # ---- M1: ingest ----
+    # Two supported sources, routed by the shape of ``video_ref``:
+    #   • YouTube URL  → ingest_video (yt-dlp + ffmpeg + caption harvest)
+    #   • upload S3 key → ingest_upload (download from MinIO + ffmpeg)
+    # Anything else (a bare filename, an unknown URL) can't be processed, so we
+    # fail fast with a clear, user-facing reason rather than handing garbage to
+    # yt-dlp and surfacing an opaque extractor error.
+    if _is_youtube_ref(video_ref):
+        from ice_ingestion import ingest_video
+
+        ingest = ingest_video(video_ref, tenant_id, curriculum_id)
+        source_type = "youtube"
+    elif _is_upload_ref(video_ref):
+        from ice_ingestion import ingest_upload
+
+        ingest = ingest_upload(video_ref, tenant_id, curriculum_id)
+        source_type = "upload"
+    else:
         raise ValueError(
-            "Unsupported source: only YouTube URLs can be processed right now. "
-            "Local file upload ingestion is not available yet."
+            "Unsupported source: expected a YouTube URL or an uploaded-file "
+            f"reference, got {video_ref!r}."
         )
 
-    # ---- M1: ingest (yt-dlp + ffmpeg + MinIO) ----
-    from ice_ingestion import ingest_video
-
-    ingest = ingest_video(video_ref, tenant_id, curriculum_id)
     await persist.update_curriculum_meta(
         curriculum_id,
         tenant_id,
-        title=ingest["title"],
+        # For uploads the learner supplied the title at upload time (already on
+        # the row); the ingest-derived name is just the S3 key basename, so
+        # don't overwrite it. YouTube titles come from yt-dlp and are canonical.
+        title=ingest["title"] if source_type == "youtube" else None,
         duration=ingest["duration_sec"],
         language=ingest["language_hint"],
-        source_type="youtube",
+        source_type=source_type,
         source_ref=video_ref,
     )
     await persist.save_artifact(

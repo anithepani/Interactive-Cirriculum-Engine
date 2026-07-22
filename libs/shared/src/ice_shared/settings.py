@@ -117,6 +117,11 @@ class _Pipeline(BaseSettings):
     # big latency/CPU win. Falls back to ASR when no captions exist.
     prefer_captions: bool = True
     caption_langs: str = "en,en-US,en-GB"  # priority order for subtitle language
+    # ── Local file upload (Phase 2) ───────────────────────────────────────
+    # Max accepted upload size (bytes) and allowed container extensions. Kept
+    # here so the API validates before streaming to MinIO. 2 GiB default.
+    upload_max_bytes: int = 2 * 1024 * 1024 * 1024
+    upload_allowed_exts: str = ".mp4,.mov,.mkv,.webm,.avi,.m4v"
 
 
 class Settings(BaseSettings):

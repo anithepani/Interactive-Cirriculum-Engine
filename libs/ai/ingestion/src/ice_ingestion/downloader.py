@@ -39,6 +39,34 @@ def _find_ffmpeg() -> str:
     return "ffmpeg"
 
 
+def _ffprobe_duration(path: str) -> float:
+    """Return the media duration in seconds via ffprobe (0.0 if unknown).
+
+    Uses ffprobe from the same location as ffmpeg. Never raises — a probe
+    failure just yields 0.0 so the pipeline continues (duration is only used
+    for the validation window + UI display).
+    """
+    ffmpeg = _find_ffmpeg()
+    ffprobe = os.path.join(os.path.dirname(ffmpeg), "ffprobe")
+    if os.name == "nt" and not ffprobe.lower().endswith(".exe"):
+        ffprobe += ".exe"
+    if not (os.path.dirname(ffmpeg) and os.path.exists(ffprobe)):
+        # Fall back to a bare `ffprobe` on PATH.
+        ffprobe = shutil.which("ffprobe") or "ffprobe"
+    cmd = [
+        ffprobe, "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        path,
+    ]
+    try:
+        out = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        return float((out.stdout or "").strip() or 0.0)
+    except (subprocess.CalledProcessError, ValueError, OSError) as exc:
+        logger.info("ffprobe duration probe failed for %s: %s", path, exc)
+        return 0.0
+
+
 def _probe(url: str) -> dict[str, Any]:
     """Fetch metadata without downloading; used for duration validation."""
     opts = {
@@ -183,4 +211,86 @@ def ingest(
             # Non-None when existing YouTube captions were harvested; the worker
             # uses this to skip Whisper ASR. Canonical transcript contract.
             "caption_transcript": caption_transcript,
+        }
+
+
+def _download_object(s3_key: str, dest_path: str) -> None:
+    """Download an object from MinIO/S3 to a local path."""
+    s3 = get_s3_client()
+    bucket = settings.s3.bucket
+    s3.download_file(bucket, s3_key, dest_path)
+    logger.info("downloaded upload -> %s (from s3://%s/%s)", dest_path, bucket, s3_key)
+
+
+def ingest_upload(
+    s3_key: str,
+    tenant_id: Any,
+    curriculum_id: Any,
+) -> dict[str, Any]:
+    """Ingest a previously-uploaded local video already stored in MinIO.
+
+    The API's ``POST /curricula/upload`` endpoint streams the raw upload to
+    ``tenants/<tid>/curricula/<cid>/source_video<ext>`` and stores that S3 key
+    as the curriculum's ``source_ref``. This function pulls that object back
+    down to a local temp path, extracts a 16 kHz mono WAV via the existing
+    ``_to_wav`` helper, probes duration with ffprobe, and returns the SAME
+    contract dict as :func:`ingest` so the rest of the pipeline (M2..M8) is
+    entirely source-agnostic.
+
+    Unlike the YouTube path there are no captions, so ``caption_transcript`` is
+    ``None`` — the worker falls through to Whisper ASR. The uploaded source
+    object is intentionally left in MinIO (not deleted) so the HTML5 player can
+    stream it later; only the local temp copies are cleaned up by the worker.
+
+    Returns:
+        {"video_path": str, "audio_path": str, "s3_key": str,
+         "s3_video_key": str, "title": str, "duration_sec": float,
+         "language_hint": str, "caption_transcript": None}
+    """
+    ext = os.path.splitext(s3_key)[1] or ".mp4"
+    # Derive a human-ish title from the stored key (endpoint may override the
+    # curriculum title separately; this is a safe fallback).
+    title = os.path.splitext(os.path.basename(s3_key))[0] or "Uploaded video"
+
+    with tempfile.TemporaryDirectory(prefix="ice_upload_") as tmp:
+        src = os.path.join(tmp, f"source{ext}")
+        _download_object(s3_key, src)
+
+        duration = _ffprobe_duration(src)
+        max_dur = settings.pipeline.max_video_duration_sec
+        min_dur = settings.pipeline.min_video_duration_sec
+        if duration and (duration < min_dur or duration > max_dur):
+            raise ValueError(
+                f"Video duration {duration:.0f}s outside allowed window "
+                f"[{min_dur}, {max_dur}]s."
+            )
+
+        wav_path = os.path.join(tmp, "audio.wav")
+        _to_wav(src, wav_path)
+        audio_s3_key = _upload_wav(wav_path, tenant_id, curriculum_id)
+
+        # Stable copies outside the context manager (survive this call) for M2/M3.
+        stable_audio_name = os.path.join(
+            tempfile.gettempdir(), f"ice_audio_{os.getpid()}.wav"
+        )
+        shutil.copy(wav_path, stable_audio_name)
+        logger.info("audio ready for ASR: %s", stable_audio_name)
+
+        stable_video_name = os.path.join(
+            tempfile.gettempdir(), f"ice_video_{os.getpid()}{ext}"
+        )
+        shutil.copy(src, stable_video_name)
+        logger.info("video ready for Vision: %s", stable_video_name)
+
+        return {
+            "video_path": stable_video_name,
+            "audio_path": stable_audio_name,
+            "s3_key": audio_s3_key,
+            # The uploaded source video already lives at this key in MinIO.
+            "s3_video_key": s3_key,
+            "title": title,
+            "duration_sec": duration,
+            "language_hint": "en",
+            # No captions on uploads → worker runs Whisper ASR.
+            "caption_transcript": None,
         }

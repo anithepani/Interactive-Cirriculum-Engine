@@ -44,5 +44,30 @@ def ingest_video(
     return ingest(video_ref, tenant_id, curriculum_id)
 
 
-__all__ = ["ingest_video"]
+def ingest_upload(
+    s3_key: str, tenant_id: Any, curriculum_id: Any = None
+) -> dict:
+    """Ingest an uploaded video already stored in MinIO (local-file path).
+
+    Mirrors :func:`ingest_video` but sources the media from an S3 object (the
+    raw upload streamed by ``POST /curricula/upload``) instead of yt-dlp.
+    Returns the identical contract dict so the downstream pipeline is
+    source-agnostic.
+
+    Args:
+        s3_key: The MinIO/S3 key of the uploaded source video
+            (``tenants/<tid>/curricula/<cid>/source_video<ext>``).
+        tenant_id: Owning tenant (S3 key scoping + RLS).
+        curriculum_id: Curriculum row id (for the derived audio S3 key path).
+
+    Raises:
+        ValueError: if the probed duration is outside the configured window.
+        RuntimeError / botocore errors: if the S3 download or ffmpeg fail.
+    """
+    from ice_ingestion.downloader import ingest_upload as _ingest_upload
+
+    return _ingest_upload(s3_key, tenant_id, curriculum_id)
+
+
+__all__ = ["ingest_video", "ingest_upload"]
 
