@@ -92,6 +92,14 @@ class _Vision(BaseSettings):
     enable_heavy_fallbacks: bool = False
     max_workers: int = 0
     max_frames: int = 150
+    # Downscale frames wider than this (px) before OCR. Large screen recordings
+    # OCR much faster downscaled with negligible accuracy loss for slide/code
+    # text. 0 disables downscaling.
+    ocr_max_width: int = 1280
+    # ONNX intra-op thread cap. With the threaded OCR pool each worker thread
+    # shares one ONNX engine; capping intra-op threads to 1 avoids core
+    # oversubscription (N threads x N cores). 0 = let ONNX Runtime decide.
+    onnx_intra_op_threads: int = 1
 
 
 class _Pipeline(BaseSettings):
@@ -109,6 +117,11 @@ class _Pipeline(BaseSettings):
     # big latency/CPU win. Falls back to ASR when no captions exist.
     prefer_captions: bool = True
     caption_langs: str = "en,en-US,en-GB"  # priority order for subtitle language
+    # ── Local file upload (Phase 2) ───────────────────────────────────────
+    # Max accepted upload size (bytes) and allowed container extensions. Kept
+    # here so the API validates before streaming to MinIO. 2 GiB default.
+    upload_max_bytes: int = 2 * 1024 * 1024 * 1024
+    upload_allowed_exts: str = ".mp4,.mov,.mkv,.webm,.avi,.m4v"
 
 
 class Settings(BaseSettings):

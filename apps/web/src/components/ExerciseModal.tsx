@@ -255,16 +255,20 @@ export default function ExerciseModal({
   };
 
   // The supporting code snippet extracted from the lesson (M3 OCR -> exercise
-  // `context`). Shown read-only when present AND relevant. Guard (Issue 2):
-  // legacy rows stored garbage OCR (IDE chrome / terminal output) or duplicated
-  // the editor's own code here, so we hide the snippet when it (a) looks like
-  // IDE/terminal metadata, (b) duplicates the buggy/starter code already in the
-  // editor, or (c) is too short to be useful.
+  // `context`). Shown read-only ONLY when present AND genuinely relevant.
+  // Issue 3 (defence-in-depth): the backend now scopes context to the segment,
+  // hardens OCR, and gates relevance — but legacy rows may still carry garbage
+  // OCR (IDE chrome / terminal output / cross-segment code) or duplicate the
+  // editor's own code. This guard hides the snippet unless it (a) is the right
+  // exercise kind, (b) looks like real code, (c) is free of OCR corruption,
+  // (d) doesn't duplicate the editor seed, and — for coding/mcq/conceptual —
+  // (e) the prompt actually references a code block.
   const isLikelyIdeMetadata = (code: string): boolean => {
     const markers = [
       "main.py", "builtins", "structure", "run:", "process finished",
       "exit code", "__pycache__", "site-packages", "external libraries",
-      "explorer", "navigate", "refactor",
+      "explorer", "navigate", "refactor", "in[", "out[", "library number",
+      "winequality", "traceback",
     ];
     const lines = code.split("\n").map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0) return true;
@@ -274,14 +278,42 @@ export default function ExerciseModal({
     return hits >= 2;
   };
 
+  // OCR corruption: real source never contains CJK or full-width punctuation.
+  const hasOcrCorruption = (code: string): boolean =>
+    /[\u3000-\u9fff\uac00-\ud7a3（）“”‘’＝，；：《》【】、。]/.test(code);
+
+  // At least one genuine code signal must be present.
+  const looksLikeCode = (code: string): boolean =>
+    /\b(def|class|import|function|const|let|return|print|console)\b|[=;{}()]/.test(
+      code
+    );
+
+  // Does the prompt explicitly point the learner at a provided snippet?
+  const promptReferencesCode = (): boolean => {
+    const p = (exercise.prompt || exercise.question || "").toLowerCase();
+    if (!p) return false;
+    return (
+      /```/.test(exercise.prompt || "") ||
+      /(following|below|above|shown)\s+code|code\s+(below|above|shown)|this\s+function|the\s+function\s+(below|above)|snippet|given\s+code|this\s+code|consider\s+the/.test(
+        p
+      )
+    );
+  };
+
   const contextIsRelevant = (code: string): boolean => {
     const trimmed = code.trim();
-    if (trimmed.length < 12) return false;
+    if (trimmed.length < 20) return false;
+    if (hasOcrCorruption(trimmed)) return false;
     if (isLikelyIdeMetadata(trimmed)) return false;
+    if (!looksLikeCode(trimmed)) return false;
     // Don't repeat the code already shown in the editor (debug buggy / coding starter).
     const editorSeed = (exercise.buggy_code || exercise.starter_code || exercise.starter || "").trim();
     if (editorSeed && trimmed.slice(0, 40) === editorSeed.slice(0, 40)) return false;
-    return true;
+    // debug: the learner analyses provided code, so a snippet is inherently
+    // relevant. coding/mcq/conceptual: only when the prompt references code
+    // (a from-scratch `greet` coding task must NOT show a snippet).
+    if (exType === "debug") return true;
+    return promptReferencesCode();
   };
 
   const renderContext = () => {

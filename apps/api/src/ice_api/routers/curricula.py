@@ -12,7 +12,7 @@ import traceback
 from difflib import SequenceMatcher
 from typing import List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from pydantic import BaseModel
@@ -396,9 +396,21 @@ async def _record_checkpoint_attempt(
 router = APIRouter(prefix="/api/v1/curricula", tags=["curricula"])
 
 
+_VALID_DIFFICULTIES = ("easy", "medium", "hard")
+
+
+def _normalise_difficulty(value: Optional[str]) -> str:
+    """Clamp an arbitrary difficulty string to easy|medium|hard (default medium)."""
+    v = (value or "").strip().lower()
+    return v if v in _VALID_DIFFICULTIES else "medium"
+
+
 class CurriculumCreate(BaseModel):
     video_url: str
     title: Optional[str] = None
+    # Phase 4: learner-selected difficulty (easy | medium | hard). Defaults to
+    # "medium" so older clients that don't send it behave unchanged.
+    difficulty: Optional[str] = "medium"
 
 
 class EvaluateRequest(BaseModel):
@@ -667,6 +679,7 @@ async def create_curriculum(
             title=data.title or "Untitled",
             source_ref=data.video_url,
             source_type="youtube" if video_id else "upload",
+            difficulty=_normalise_difficulty(data.difficulty),
         )
         session.add(curriculum)
         await session.commit()
@@ -683,6 +696,120 @@ async def create_curriculum(
         logger.error(f"Error in create_curriculum: {e}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=traceback.format_exc())
+
+
+@router.post("/upload", response_model=Dict[str, Any])
+async def upload_curriculum(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    difficulty: Optional[str] = Form("medium"),
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Ingest a locally-uploaded video file (Phase 2).
+
+    Streams the raw upload to MinIO at
+    ``tenants/<tid>/curricula/<cid>/source_video<ext>``, creates the Curriculum
+    row with ``source_type="upload"`` and ``source_ref=<s3 key>``, then
+    dispatches the same ``generate_curriculum`` pipeline the YouTube path uses —
+    the worker routes on the ref shape (S3 key → local-file ingest). The
+    uploaded object is retained in MinIO so the HTML5 player can stream it.
+    """
+    from ice_shared.s3 import get_s3_client, tenant_prefix
+    from ice_shared import settings as _settings
+
+    try:
+        tenant_id = current_user.tenant_id
+        set_tenant_context(str(tenant_id))
+
+        # ── Server-side validation: extension + size ──────────────────────
+        filename = file.filename or ""
+        ext = os.path.splitext(filename)[1].lower()
+        allowed = {
+            e.strip().lower()
+            for e in _settings.pipeline.upload_allowed_exts.split(",")
+            if e.strip()
+        }
+        if ext not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unsupported file type {ext or '(none)'}. Allowed: "
+                    + ", ".join(sorted(allowed))
+                ),
+            )
+
+        max_bytes = int(_settings.pipeline.upload_max_bytes)
+
+        # ── Create the curriculum row first so we have an id for the key ──
+        curriculum = Curriculum(
+            tenant_id=tenant_id,
+            user_id=current_user.id,
+            title=title or os.path.splitext(os.path.basename(filename))[0] or "Uploaded video",
+            source_type="upload",
+            source_ref=None,  # set below once the S3 key is known
+            status=CurriculumStatus.queued,
+            difficulty=_normalise_difficulty(difficulty),
+        )
+        session.add(curriculum)
+        await session.commit()
+        await session.refresh(curriculum)
+
+        s3_key = (
+            f"{tenant_prefix(tenant_id)}curricula/{curriculum.id}/source_video{ext}"
+        )
+
+        # ── Stream the upload to a temp file in bounded chunks (size-guarded),
+        # then upload to MinIO off the event loop ─────────────────────────
+        s3 = get_s3_client()
+        bucket = _settings.s3.bucket
+        tmp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                tmp_path = tmp.name
+                total = 0
+                while True:
+                    chunk = await file.read(1024 * 1024)  # 1 MiB
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=(
+                                "File exceeds the maximum allowed size "
+                                f"({max_bytes // (1024 * 1024)} MiB)."
+                            ),
+                        )
+                    tmp.write(chunk)
+            content_type = file.content_type or "application/octet-stream"
+            await asyncio.to_thread(
+                s3.upload_file,
+                tmp_path,
+                bucket,
+                s3_key,
+                {"ContentType": content_type},
+            )
+        finally:
+            if tmp_path:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
+
+        # Persist the resolved S3 key as the source ref, then dispatch.
+        curriculum.source_ref = s3_key
+        await session.commit()
+
+        asyncio.create_task(process_video(curriculum.id, s3_key, tenant_id))
+
+        return {"curriculum_id": curriculum.id, "status": "queued"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        await session.rollback()
+        logger.error(f"Error in upload_curriculum: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/ping")
@@ -1004,6 +1131,7 @@ async def get_curriculum(
             "signal_video_url": curriculum.signal_video_url,
             "ready_at": curriculum.ready_at.isoformat() if curriculum.ready_at else None,
             "video_url": curriculum.source_ref,
+            "source_type": curriculum.source_type,
             "duration": curriculum.duration,
             "segments": [
                 {
@@ -1046,6 +1174,71 @@ async def get_curriculum(
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{curriculum_id}/video", response_model=Dict[str, Any])
+async def get_upload_video_url(
+    curriculum_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return a presigned MinIO URL for a locally-uploaded source video.
+
+    Only applies to ``source_type=="upload"`` rows (YouTube rows are streamed
+    directly by the react-youtube player and never hit this endpoint). The URL
+    is generated against ``MINIO_EXTERNAL_ENDPOINT`` so the browser can reach
+    MinIO from outside the docker network (same robust external-client pattern
+    used by the recap task).
+    """
+    from ice_shared import settings as _settings
+
+    try:
+        set_tenant_context(str(current_user.tenant_id))
+
+        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        result = await session.execute(stmt)
+        curriculum = result.scalar_one_or_none()
+        if not curriculum:
+            raise HTTPException(status_code=404, detail="Curriculum not found")
+
+        if curriculum.source_type != "upload":
+            raise HTTPException(
+                status_code=400,
+                detail="Video URL only available for uploaded curricula",
+            )
+
+        s3_key = curriculum.source_ref
+        if not s3_key:
+            raise HTTPException(status_code=404, detail="No source video available")
+
+        # Robust external-client pattern (mirrors recap.py:378-401): sign the
+        # URL against the browser-reachable external endpoint so playback works
+        # from outside the docker network.
+        external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", "http://localhost:9000")
+
+        import boto3
+        from botocore.config import Config
+
+        external_s3 = boto3.client(
+            "s3",
+            endpoint_url=external_endpoint,
+            aws_access_key_id=_settings.s3.access_key,
+            aws_secret_access_key=_settings.s3.secret_key,
+            config=Config(signature_version="s3v4"),
+            region_name="us-east-1",
+        )
+        url = external_s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": _settings.s3.bucket, "Key": s3_key},
+            ExpiresIn=7 * 24 * 3600,
+        )
+
+        return {"video_url": url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating video URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/{curriculum_id}/signal")
 async def start_signal_video(

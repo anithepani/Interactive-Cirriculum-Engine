@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import urllib.request
 import tempfile
 from collections import Counter
@@ -17,6 +18,7 @@ from ice_contracts.visual import VisualItem, VisualRegionType
 logger = logging.getLogger(__name__)
 
 _ocr_engine = None
+_ocr_engine_lock = threading.Lock()
 _trocr_model = None
 _trocr_processor = None
 _ts_parser = None
@@ -25,9 +27,20 @@ _ts_parser = None
 def _get_ocr_engine():
     global _ocr_engine
     if _ocr_engine is None:
-        from rapidocr_onnxruntime import RapidOCR
+        with _ocr_engine_lock:
+            if _ocr_engine is None:
+                # Cap ONNX intra-op threads so the threaded OCR pool (each worker
+                # shares this one engine) doesn't oversubscribe cores. ONNX
+                # Runtime reads OMP_NUM_THREADS when it initializes its thread
+                # pool, so this must happen before rapidocr/onnxruntime is
+                # imported. setdefault never overrides an operator-provided
+                # value.
+                intra = settings.vision.onnx_intra_op_threads
+                if intra > 0:
+                    os.environ.setdefault("OMP_NUM_THREADS", str(intra))
+                from rapidocr_onnxruntime import RapidOCR
 
-        _ocr_engine = RapidOCR()
+                _ocr_engine = RapidOCR()
     return _ocr_engine
 
 
@@ -96,42 +109,69 @@ def _extract_frames(
         fps = 30.0
 
     frame_interval = max(1, int(fps * extract_rate_sec))
-    frames = []
-    frame_idx = 0
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    dedup_limit = 64 * 64 * dedup_threshold
 
-    prev_hash = None
+    kept: list[tuple[int, float, np.ndarray]] = []
+    # Compare each candidate against a short window of recently-kept frames so
+    # recurring near-duplicates (e.g. a held slide) are dropped cheaply, not only
+    # when they happen to follow the immediately-previous kept frame.
+    recent_hashes: list[np.ndarray] = []
+    dedup_window = 3
 
-    while True:
+    def _consider(frame: np.ndarray, idx: int) -> bool:
+        small = cv2.resize(frame, (64, 64))
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        curr_hash = gray > gray.mean()
+        for ph in recent_hashes:
+            if np.count_nonzero(curr_hash != ph) < dedup_limit:
+                return False
+        kept.append((len(kept), idx / fps, frame))
+        recent_hashes.append(curr_hash)
+        if len(recent_hashes) > dedup_window:
+            recent_hashes.pop(0)
+        return True
+
+    # Primary path: seek to each sample index and decode only that frame. This
+    # avoids decoding every frame of a long video (the big latency win for a
+    # 10-min screen recording — ~1 decode per sample instead of thousands).
+    sample_idx = 0
+    seek_broken = False
+    while len(kept) < max_frames:
+        if total_frames > 0 and sample_idx >= total_frames:
+            break
+        cap.set(cv2.CAP_PROP_POS_FRAMES, sample_idx)
         ret, frame = cap.read()
         if not ret:
+            if not kept:
+                seek_broken = True
             break
+        _consider(frame, sample_idx)
+        sample_idx += frame_interval
 
-        if frame_idx % frame_interval == 0:
-            # Resize for hash
-            small = cv2.resize(frame, (64, 64))
-            gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-            avg = gray.mean()
-            curr_hash = gray > avg
+    # Fallback: some containers/codecs can't seek accurately and return no
+    # frames. Use a cheap grab()-based pass that advances without decoding to
+    # numpy and only decodes (read()) at sample points — still far cheaper than
+    # decoding every frame.
+    if seek_broken:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        frame_idx = 0
+        while len(kept) < max_frames:
+            if frame_idx % frame_interval == 0:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                _consider(frame, frame_idx)
+            else:
+                if not cap.grab():
+                    break
+            frame_idx += 1
 
-            if prev_hash is not None:
-                diff = np.count_nonzero(curr_hash != prev_hash)
-                # If images are very similar (diff < threshold), skip
-                if diff < (64 * 64 * dedup_threshold):
-                    frame_idx += 1
-                    continue
-
-            prev_hash = curr_hash
-            ts = frame_idx / fps
-            frames.append((len(frames), ts, frame))
-            
-            if len(frames) >= max_frames:
-                logger.warning(f"Reached maximum frame limit of {max_frames}. Stopping frame extraction.")
-                break
-
-        frame_idx += 1
+    if len(kept) >= max_frames:
+        logger.warning(f"Reached maximum frame limit of {max_frames}. Stopping frame extraction.")
 
     cap.release()
-    return frames
+    return kept
 
 
 # IDE / terminal chrome that OCR picks up from a screen recording but which is
@@ -142,14 +182,63 @@ _IDE_METADATA_MARKERS = (
     "console", "output", "explorer", "project", "navigate", "refactor",
     "problems", "version control", "search everywhere", "process finished",
     "exit code", ".idea", "__pycache__", "site-packages", "external libraries",
+    # Issue 3: Jupyter / REPL / notebook chrome and library-tour prose seen in
+    # the reported garbage (In[12], Out[5], "Library number four", CSV names).
+    "in[", "out[", "in [", "out [", "library number", "winequality",
+    ".csv", "traceback", "stdin", "stdout", "stderr", "kernel",
 )
 
 # Signals that a line is genuinely a line of code (not prose / a menu label).
 _CODE_TOKEN_KEYWORDS = {
     "def", "class", "import", "return", "from", "public", "void",
     "for", "while", "if", "elif", "else", "print", "lambda", "yield",
-    "async", "await", "try", "except", "with",
+    "async", "await", "try", "except", "with", "function", "const", "let",
 }
+
+# STRONG structural keywords: their presence is high-confidence evidence that a
+# frame really contains source code (not a stray "if"/"for" in prose or a menu).
+# NOTE: "from" is deliberately excluded — as an English preposition it fires on
+# ordinary narration ("udd from the website") and produced false CODE frames.
+_STRONG_CODE_KEYWORDS = {
+    "def", "class", "import", "function", "public", "void", "const",
+}
+
+# OCR-corruption / non-code artifacts. Real source code (Python/JS/Java) never
+# contains CJK characters or "smart" full-width punctuation; when OCR emits
+# these it has mangled prose or UI text, not code (Issue 3 garbage examples:
+# "htal.)", "（）", "林 finding", "consote.wor").
+_OCR_NOISE_CHARS = "（）“”‘’＝，；：《》【】、。—…"
+
+
+def _has_cjk(s: str) -> bool:
+    return any(
+        "\u3000" <= ch <= "\u9fff" or "\uac00" <= ch <= "\ud7a3" for ch in s
+    )
+
+
+def _looks_like_ocr_garbage(line: str) -> bool:
+    """True when a line carries OCR-corruption artifacts that no real code has."""
+    if _has_cjk(line):
+        return True
+    if any(ch in line for ch in _OCR_NOISE_CHARS):
+        return True
+    return False
+
+
+def _looks_like_prose(line: str) -> bool:
+    """True when a line reads as an English sentence, not a line of code.
+
+    Long runs of alphabetic words with no code punctuation (``=(){}[].:``) are
+    prose the OCR captured from slides/narration (e.g. "Guido wanted to create a
+    language that was easy to read and write.").
+    """
+    s = line.strip()
+    if not s:
+        return False
+    if any(c in s for c in "={}[]()<>;"):
+        return False
+    words = [w for w in s.split() if w.isalpha()]
+    return len(words) >= 5
 
 
 def _looks_like_code_line(line: str) -> bool:
@@ -157,13 +246,17 @@ def _looks_like_code_line(line: str) -> bool:
     s = line.strip()
     if not s:
         return False
+    # Issue 3: reject OCR-corrupted and prose lines outright — these were the
+    # dominant source of the garbage "CODE SNIPPET" content.
+    if _looks_like_ocr_garbage(s) or _looks_like_prose(s):
+        return False
     words = set(s.lower().replace("(", " ").replace(":", " ").split())
     if words & _CODE_TOKEN_KEYWORDS:
         return True
     # Structural signals: indented assignment/call, block-open, call syntax.
     if line[:1] in (" ", "\t") and any(c in s for c in "=(:"):
         return True
-    if s.endswith(":"):
+    if s.endswith(":") and any(c in s for c in "()="):
         return True
     if "()" in s or ("(" in s and ")" in s and "=" in s):
         return True
@@ -181,19 +274,27 @@ def _metadata_ratio(text: str) -> float:
     return hits / len(lines)
 
 
+def _has_strong_code_keyword(text: str) -> bool:
+    """True when the text contains at least one high-confidence code keyword."""
+    tokens = set(text.lower().replace("(", " ").replace(":", " ").split())
+    return bool(tokens & _STRONG_CODE_KEYWORDS)
+
+
 def _classify_region(text: str, img_shape: tuple[int, ...]) -> VisualRegionType:
     text_lower = text.lower()
 
     # An editor/terminal screenshot is dominated by IDE chrome — treat it as a
-    # SLIDE so its noisy OCR never becomes an exercise code snippet (Issue 2).
-    if _metadata_ratio(text) >= 0.4:
+    # SLIDE so its noisy OCR never becomes an exercise code snippet (Issue 2/3).
+    # Threshold lowered to 0.3 so lightly-chromed editor frames still fail out.
+    if _metadata_ratio(text) >= 0.3:
         return VisualRegionType.SLIDE
 
-    # Require MULTIPLE code-shaped lines before calling a frame CODE. A single
-    # stray keyword (e.g. "import" in a menu label) is not enough — that
-    # false-positive pulled whole IDE frames in as "code".
+    # Require MULTIPLE code-shaped lines AND at least one strong structural
+    # keyword (def/class/import/function/...) before calling a frame CODE. A few
+    # stray "if"/"for"/"print" tokens (common in prose or menus) are NOT enough;
+    # that false-positive pulled whole IDE/notebook frames in as "code" (Issue 3).
     code_lines = sum(1 for ln in text.splitlines() if _looks_like_code_line(ln))
-    if code_lines >= 2:
+    if code_lines >= 3 and _has_strong_code_keyword(text):
         return VisualRegionType.CODE
 
     if "architecture" in text_lower or "flow" in text_lower or "diagram" in text_lower:
@@ -205,22 +306,29 @@ def _classify_region(text: str, img_shape: tuple[int, ...]) -> VisualRegionType:
 def _sanitize_code(text: str) -> str:
     """Keep only code-shaped lines, dropping interleaved IDE/terminal chrome.
 
-    OCR of an editor frame mixes real code with menu labels, the file tree, and
-    terminal output. We drop lines that read as IDE metadata or don't look like
-    code; if stripping leaves nothing useful we fall back to the original text
-    so a genuine snippet is never lost.
+    OCR of an editor frame mixes real code with menu labels, the file tree,
+    terminal output, prose narration, and mangled characters. We drop lines that
+    read as IDE metadata, OCR garbage, or prose, keeping only the contiguous
+    code. Unlike before, if nothing survives we return an EMPTY string (Issue 3)
+    so a garbage frame yields no snippet at all rather than falling back to the
+    raw noisy text.
     """
     kept: list[str] = []
     for ln in text.splitlines():
         low = ln.lower()
         if any(m in low for m in _IDE_METADATA_MARKERS):
             continue
-        # Keep code-shaped lines, plus continuation lines once code has started.
-        if _looks_like_code_line(ln) or (ln.strip() and kept):
+        if _looks_like_ocr_garbage(ln) or _looks_like_prose(ln):
+            continue
+        # Keep code-shaped lines, plus indented continuation lines once code has
+        # started (but never blank-only prose that slipped through).
+        if _looks_like_code_line(ln) or (ln.strip() and kept and ln[:1] in (" ", "\t")):
             kept.append(ln)
     cleaned = "\n".join(kept).strip()
-    if not cleaned:
-        return text.strip()
+    # Issue 3: require at least two surviving code lines to consider it a real
+    # snippet; otherwise return empty so no garbage snippet is surfaced.
+    if len([ln for ln in kept if ln.strip()]) < 2:
+        return ""
     # Best-effort parse (validation only; we keep the cleaned text regardless).
     try:
         parser = _get_ts_parser()
@@ -233,6 +341,16 @@ def _sanitize_code(text: str) -> str:
 def _ocr_single_frame(args: tuple) -> dict | None:
     f_idx, ts, frame, device = args
     try:
+        # Downscale wide frames before OCR. Large screen recordings OCR much
+        # faster at <= ocr_max_width px with negligible accuracy loss for
+        # slide/code text. Bbox is normalized later, so scaling is safe.
+        max_width = settings.vision.ocr_max_width
+        if max_width and frame.shape[1] > max_width:
+            h0, w0 = frame.shape[:2]
+            frame = cv2.resize(
+                frame, (max_width, int(h0 * (max_width / w0))),
+                interpolation=cv2.INTER_AREA,
+            )
         # Convert BGR to RGB for OCR
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         ocr = _get_ocr_engine()
@@ -303,7 +421,14 @@ def _ocr_single_frame(args: tuple) -> dict | None:
         region_type = _classify_region(full_text, frame.shape)
         
         if region_type == VisualRegionType.CODE:
-            full_text = _sanitize_code(full_text)
+            sanitized = _sanitize_code(full_text)
+            if sanitized:
+                full_text = sanitized
+            else:
+                # Sanitization stripped everything as noise/prose (Issue 3):
+                # this was not real code, so demote to SLIDE rather than emit an
+                # empty CODE region that would surface as a garbage snippet.
+                region_type = VisualRegionType.SLIDE
             
         # Normalize bbox
         bbox = [
@@ -364,12 +489,13 @@ def extract_visuals(
     if not frames:
         return []
 
-    # Parallel processing of frames via ProcessPoolExecutor
+    # Parallel processing of frames via ThreadPoolExecutor
     max_workers = settings.vision.max_workers
     if max_workers <= 0:
         max_workers = min(os.cpu_count() or 1, 4)
 
-    # Arguments to pass to process pool
+    # Arguments to pass to the pool. With threads (not processes) the frames
+    # stay in shared memory — no pickling of large BGR arrays across processes.
     tasks = [(f_idx, ts, frame, device) for f_idx, ts, frame in frames]
     visual_items = []
 
@@ -389,10 +515,16 @@ def extract_visuals(
                 )
                 visual_items.append(item)
     else:
-        logger.info(f"Running OCR on {len(frames)} frames with {max_workers} processes")
-        from concurrent.futures import ProcessPoolExecutor, as_completed
+        logger.info(f"Running OCR on {len(frames)} frames with {max_workers} threads")
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         try:
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            # Threads (not processes): RapidOCR / ONNX Runtime releases the GIL
+            # during inference, giving real parallelism while avoiding the
+            # "daemonic processes are not allowed to have children" crash that
+            # happens when a ProcessPoolExecutor is created inside Celery's
+            # preforked daemon worker. The module-global OCR engine stays warm
+            # (no per-worker cold start).
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 futures = [executor.submit(_ocr_single_frame, task) for task in tasks]
                 for future in as_completed(futures):
                     res = future.result()
@@ -408,7 +540,7 @@ def extract_visuals(
                         )
                         visual_items.append(item)
         except Exception as e:
-            logger.error(f"Multiprocessing execution failed: {e}. Falling back to sequential execution.")
+            logger.error(f"Threaded OCR execution failed: {e}. Falling back to sequential execution.")
             visual_items = []
             for task in tasks:
                 res = _ocr_single_frame(task)

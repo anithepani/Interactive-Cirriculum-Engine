@@ -210,31 +210,8 @@ async def _run_recap(curriculum_id_str: str, tenant_id: str) -> None:
             raise ValueError("No sentences extracted")
 
         # ---- LLM Embedding & scoring (Gemini) ----
-        import google.generativeai as genai
-        
-        gemini_api_key = os.environ.get("GEMINI_API_KEY")
-        if not gemini_api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set")
-            
-        genai.configure(api_key=gemini_api_key)
-        
-        # Find an available model
-        available_models = [m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods]
-        
-        target_model = None
-        for preferred in ["models/gemini-3.1-flash-lite", "models/gemini-3.5-flash", "models/gemini-3.1-pro-preview", "models/gemini-flash-latest"]:
-            if preferred in available_models:
-                target_model = preferred.replace("models/", "")
-                break
-                
-        if not target_model:
-            target_model = available_models[0].replace("models/", "")
-            
-        try:
-            model = genai.GenerativeModel(target_model, generation_config={"response_mime_type": "application/json"})
-        except Exception:
-            # Fallback if mime_type is not supported on this model
-            model = genai.GenerativeModel(target_model)
+        from ice_worker.tasks._gemini import get_gemini_model
+        model = get_gemini_model(generation_config={"response_mime_type": "application/json"})
         
         concept_texts = "\n".join([f"- {c.label}: {c.description}" for c in concepts])
         
@@ -265,7 +242,7 @@ Here is the transcript data:
         transcript_subset = [{"id": i, "start": s["start"], "end": s["end"], "text": s["text"]} for i, s in enumerate(sentences)]
         transcript_json = json.dumps(transcript_subset)
         
-        logger.info(f"Sending {len(transcript_subset)} sentences to Gemini model {target_model}")
+        logger.info(f"Sending {len(transcript_subset)} sentences to Gemini")
         try:
             response = model.generate_content(prompt + transcript_json)
             clean_text = response.text.strip()

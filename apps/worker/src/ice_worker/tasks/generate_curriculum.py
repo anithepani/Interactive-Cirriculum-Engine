@@ -59,34 +59,175 @@ def _is_youtube_ref(video_ref: str) -> bool:
     return bool(video_ref) and bool(_YT_REF_RE.search(video_ref))
 
 
+def _is_upload_ref(video_ref: str) -> bool:
+    """True when ``video_ref`` is an S3 key for a previously-uploaded video.
+
+    The upload endpoint stores the raw file at
+    ``tenants/<tid>/curricula/<cid>/source_video<ext>`` and sets that key as the
+    curriculum's ``source_ref``. We detect it structurally (tenant-scoped key,
+    not a URL) so the worker can route it to the local-file ingest path.
+    """
+    if not video_ref:
+        return False
+    if _is_youtube_ref(video_ref):
+        return False
+    if video_ref.startswith(("http://", "https://")):
+        return False
+    return video_ref.startswith("tenants/") and "/curricula/" in video_ref
+
+
+async def _get_curriculum_difficulty(curriculum_id: str) -> str:
+    """Read the learner-selected difficulty off the curriculum row.
+
+    Returns the stored value ("easy" | "medium" | "hard") or "medium" when the
+    row/column is missing (legacy DBs / pre-migration curricula). Never raises —
+    difficulty is a tuning knob and must not break generation.
+    """
+    try:
+        from ice_api.models import Curriculum
+        from ice_shared.db import get_session_factory
+
+        factory = get_session_factory()
+        async with factory() as session:
+            c = await session.get(Curriculum, int(curriculum_id))
+            value = str(getattr(c, "difficulty", None) or "medium").strip().lower()
+            return value if value in ("easy", "medium", "hard") else "medium"
+    except Exception:
+        logger.warning(
+            "could not read difficulty for curriculum %s; defaulting to medium",
+            curriculum_id,
+        )
+        return "medium"
+
+
+def _build_segment_texts(transcript: dict, segments: list[dict]) -> dict[str, str]:
+    """Build a ``{segment_id: transcript_text}`` map for exercise grounding.
+
+    M4 segment dicts carry only ``summary`` (no raw text), so we reconstruct
+    each segment's real transcript by concatenating the transcript's raw
+    segments whose midpoint falls within the M4 segment's [start, end] window.
+    This gives the exercise generator the actual spoken content to ground on.
+    Best-effort: returns ``{}`` on any problem so M7 falls back to summaries.
+    """
+    try:
+        raw = transcript.get("segments") or []
+        if not raw:
+            return {}
+        text_map: dict[str, str] = {}
+        for seg in segments:
+            sid = str(seg.get("id", ""))
+            start = float(seg.get("start", 0.0))
+            end = float(seg.get("end", 0.0))
+            parts: list[str] = []
+            for r in raw:
+                r_start = float(r.get("start", 0.0))
+                r_end = float(r.get("end", r_start))
+                mid = (r_start + r_end) / 2.0
+                if start <= mid <= end:
+                    txt = (r.get("text") or "").strip()
+                    if txt:
+                        parts.append(txt)
+            if parts:
+                text_map[sid] = " ".join(parts)
+        return text_map
+    except Exception:
+        logger.warning("could not build per-segment transcript texts; using summaries")
+        return {}
+
+
+def _build_segment_instructor_code(
+    visual_items: list, segments: list[dict]
+) -> dict[str, str]:
+    """Build a ``{segment_id: code}`` map from M3 vision OCR code items.
+
+    Phase 5 grounding guarantee: the checkpoint placer only allows coding/debug
+    exercises on a segment when there is concrete evidence it is about code.
+    Here we key each OCR ``code`` visual item to the segment whose [start, end]
+    window contains its timestamp, so the placer can gate code exercises per
+    segment. Best-effort: returns ``{}`` on any problem (the placer then falls
+    back to the transcript-text technicality heuristic).
+    """
+    try:
+        if not visual_items or not segments:
+            return {}
+
+        def _vi_field(vi, name):
+            if isinstance(vi, dict):
+                return vi.get(name)
+            return getattr(vi, name, None)
+
+        def _vi_type(vi) -> str:
+            t = _vi_field(vi, "type")
+            return str(getattr(t, "value", t) or "").lower()
+
+        code_map: dict[str, list[str]] = {}
+        for vi in visual_items:
+            if _vi_type(vi) != "code":
+                continue
+            text = _vi_field(vi, "text")
+            if not text or not str(text).strip():
+                continue
+            try:
+                ts = float(_vi_field(vi, "ts") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            for seg in segments:
+                start = float(seg.get("start", 0.0))
+                end = float(seg.get("end", start))
+                if start <= ts <= end:
+                    sid = str(seg.get("id", ""))
+                    code_map.setdefault(sid, []).append(str(text))
+                    break
+        return {sid: "\n\n".join(parts) for sid, parts in code_map.items() if parts}
+    except Exception:
+        logger.warning("could not build per-segment instructor code; skipping")
+        return {}
+
+
 async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     set_tenant_context(tenant_id)
     await _ensure_tables()
     await persist.set_curriculum_status(curriculum_id, tenant_id, "processing")
 
-    # Source-type guard (Block F): the real binary upload path (multipart →
-    # MinIO → local ingest) is deferred, so the only source we can actually
-    # process is a YouTube URL. If a non-YouTube ref slips through (e.g. an
-    # "upload" row whose source_ref is a bare filename), do NOT hand it to
-    # yt-dlp — that would fail with an opaque extractor error. Fail fast with a
-    # clear, user-facing reason instead.
-    if not _is_youtube_ref(video_ref):
+    # Phase 4: read the learner-selected difficulty off the curriculum row so
+    # it can tune checkpoint spacing (M6) + exercise numeric difficulty (M7).
+    # Best-effort with a "medium" fallback so a missing column / legacy row
+    # never breaks the pipeline (zero-regression).
+    difficulty = await _get_curriculum_difficulty(curriculum_id)
+
+    # ---- M1: ingest ----
+    # Two supported sources, routed by the shape of ``video_ref``:
+    #   • YouTube URL  → ingest_video (yt-dlp + ffmpeg + caption harvest)
+    #   • upload S3 key → ingest_upload (download from MinIO + ffmpeg)
+    # Anything else (a bare filename, an unknown URL) can't be processed, so we
+    # fail fast with a clear, user-facing reason rather than handing garbage to
+    # yt-dlp and surfacing an opaque extractor error.
+    if _is_youtube_ref(video_ref):
+        from ice_ingestion import ingest_video
+
+        ingest = ingest_video(video_ref, tenant_id, curriculum_id)
+        source_type = "youtube"
+    elif _is_upload_ref(video_ref):
+        from ice_ingestion import ingest_upload
+
+        ingest = ingest_upload(video_ref, tenant_id, curriculum_id)
+        source_type = "upload"
+    else:
         raise ValueError(
-            "Unsupported source: only YouTube URLs can be processed right now. "
-            "Local file upload ingestion is not available yet."
+            "Unsupported source: expected a YouTube URL or an uploaded-file "
+            f"reference, got {video_ref!r}."
         )
 
-    # ---- M1: ingest (yt-dlp + ffmpeg + MinIO) ----
-    from ice_ingestion import ingest_video
-
-    ingest = ingest_video(video_ref, tenant_id, curriculum_id)
     await persist.update_curriculum_meta(
         curriculum_id,
         tenant_id,
-        title=ingest["title"],
+        # For uploads the learner supplied the title at upload time (already on
+        # the row); the ingest-derived name is just the S3 key basename, so
+        # don't overwrite it. YouTube titles come from yt-dlp and are canonical.
+        title=ingest["title"] if source_type == "youtube" else None,
         duration=ingest["duration_sec"],
         language=ingest["language_hint"],
-        source_type="youtube",
+        source_type=source_type,
         source_ref=video_ref,
     )
     await persist.save_artifact(
@@ -184,8 +325,40 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     concept_map = await persist.persist_concepts(curriculum_id, tenant_id, graph)
     await persist.persist_edges(tenant_id, graph, concept_map)
 
+    # ---- Phase 5: classify curriculum content ----
+    # Lightweight, called once per curriculum. Drives dynamic exercise-type
+    # relevance in M6 (candidate pool) and M7 (prompt context). Best-effort:
+    # the classifier itself never raises (LLM failure -> keyword fallback), but
+    # we still guard so a missing category can never break generation.
+    from ice_checkpoints import classify_content
+
+    # Reconstruct a compact transcript string for the classifier.
+    transcript_text = " ".join(
+        str(r.get("text") or "").strip()
+        for r in (transcript.get("segments") or [])
+        if str(r.get("text") or "").strip()
+    )
+    try:
+        classification = classify_content(segments, graph, transcript_text)
+    except Exception:
+        logger.warning("Phase 5 classify_content failed; defaulting category")
+        classification = {"category": None, "confidence": 0.0}
+    content_category = classification.get("category")
+    logger.info(
+        "Phase 5 content category=%s (conf=%.2f) for curriculum %s",
+        content_category,
+        float(classification.get("confidence", 0.0) or 0.0),
+        curriculum_id,
+    )
+
     # ---- M6: place checkpoints ----
     from ice_checkpoints import place_checkpoints
+
+    # Phase 5 grounding guarantee: build a {segment_id: code} map from the M3
+    # vision OCR items so the placer only permits coding/debug on segments that
+    # actually have on-screen code (or technical transcript evidence). Empty
+    # map -> the placer falls back to the transcript-text heuristic.
+    seg_instructor_code = _build_segment_instructor_code(visual_items, segments)
 
     checkpoints = place_checkpoints(
         segments,
@@ -193,6 +366,9 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         min_gap_sec=settings.pipeline.checkpoint_min_gap_sec,
         min_start_sec=settings.pipeline.checkpoint_min_start_sec,
         avoid_final_sec=settings.pipeline.checkpoint_avoid_final_sec,
+        difficulty=difficulty,
+        category=content_category,
+        instructor_code=seg_instructor_code,
     )
     cp_map = await persist.persist_checkpoints(
         curriculum_id, tenant_id, checkpoints, seg_map, concept_map
@@ -203,8 +379,12 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
 
     # Feed the instructor's on-screen code (M3 vision OCR) into M7 so coding/
     # debug prompts are grounded in the real lesson context (Phase 4, Task 3).
-    # Safe fallback: if vision failed or produced no code regions this is an
-    # empty list and M7 behaves exactly as before.
+    # Issue 3: the per-segment ``seg_instructor_code`` map (built above) is the
+    # PRIMARY grounding source passed as ``segment_code`` — it scopes each
+    # checkpoint to its OWN segment's code so unrelated code from other segments
+    # never leaks into a snippet. This flat list is only a last-resort fallback
+    # for checkpoints whose segment has no scoped code. If vision failed or
+    # produced no code regions this is an empty list and M7 behaves as before.
     instructor_code: list[str] = []
     for vi in visual_items:
         if isinstance(vi, dict):
@@ -218,8 +398,17 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         if vtype_val == "code" and text and str(text).strip():
             instructor_code.append(str(text))
 
+    # Phase 4 grounding: reconstruct each segment's real transcript text from
+    # the raw transcript so M7 grounds exercises on what was actually said (not
+    # just the LLM summary). Empty map falls back to summaries (zero-regression).
+    segment_texts = _build_segment_texts(transcript, segments)
+
     exercises = generate_exercises(
-        checkpoints, segments, graph, instructor_code=instructor_code
+        checkpoints, segments, graph,
+        instructor_code=instructor_code,
+        segment_texts=segment_texts,
+        category=content_category,
+        segment_code=seg_instructor_code,
     )
     ex_map = await persist.persist_exercises(tenant_id, exercises, cp_map)
 
@@ -229,6 +418,36 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
 
     await persist.set_curriculum_status(curriculum_id, tenant_id, "ready", ready=True)
     logger.info("curriculum %s ready", curriculum_id)
+
+    # ── Auto-trigger cinematic summary (signal video) ──────────────────────────
+    # Once the curriculum is ready, kick off the signal video automatically so
+    # the learner doesn't have to press the button. Idempotent: if a signal is
+    # already queued/processing/ready (e.g. the manual button was pressed first)
+    # skip. A failure here must never fail the curriculum generation, so it's
+    # fully isolated.
+    try:
+        from ice_api.models import Curriculum
+        from ice_shared.db import get_session_factory
+
+        should_dispatch = False
+        factory = get_session_factory()
+        async with factory() as session:
+            c = await session.get(Curriculum, int(curriculum_id))
+            if c and c.signal_status not in ("queued", "processing", "ready"):
+                c.signal_status = "queued"
+                await session.commit()
+                should_dispatch = True
+        if should_dispatch:
+            celery_app.send_task(
+                "ice.worker.generate_signal_video",
+                args=[str(curriculum_id), str(tenant_id)],
+            )
+            logger.info("auto-triggered signal video for curriculum %s", curriculum_id)
+    except Exception:
+        logger.exception(
+            "failed to auto-trigger signal video for curriculum %s",
+            curriculum_id,
+        )
 
 
 async def _mark_failed(

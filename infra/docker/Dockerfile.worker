@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential libpq-dev curl ca-certificates ffmpeg \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends \
         nodejs \
         libnss3 libdbus-1-3 libatk1.0-0 libasound2 libxss1 \

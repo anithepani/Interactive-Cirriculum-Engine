@@ -33,6 +33,9 @@ export interface CurriculumDetail {
   title: string;
   video_url?: string;
   video_ref?: string;
+  // Ingest source: "youtube" streams via the react-youtube player, "upload"
+  // streams a locally-uploaded file via a presigned MinIO URL (HTML5 <video>).
+  source_type?: "youtube" | "upload" | string;
   status: string;
   recap_status?: "none" | "processing" | "ready" | "failed";
   recap_url?: string | null;

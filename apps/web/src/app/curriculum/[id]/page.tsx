@@ -56,6 +56,9 @@ export default function CurriculumPage() {
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [statusMap, setStatusMap] = useState<StatusMap>({});
+  // Presigned MinIO URL for locally-uploaded source videos (source_type ==
+  // "upload"). Fetched lazily below; YouTube curricula never set this.
+  const [uploadVideoUrl, setUploadVideoUrl] = useState<string | null>(null);
   // Session-scoped store of the learner's last submitted answer per checkpoint,
   // used to pre-fill the locked editor in Review Mode (resets on reload, like
   // statusMap). Keyed by checkpoint id.
@@ -64,6 +67,10 @@ export default function CurriculumPage() {
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   const playerRef = useRef<PlayerHandle | null>(null);
+  // Underlying HTML5 <video> element for uploaded curricula. The poll loop
+  // interacts only with the PlayerHandle wrapper (playerRef), so all existing
+  // checkpoint / anti-scrub / heartbeat / resume logic works unchanged.
+  const videoElRef = useRef<HTMLVideoElement | null>(null);
   const lastTimeRef = useRef(0);
   const triggeredRef = useRef<Set<string | number>>(new Set());
   const checkpointsRef = useRef<Checkpoint[]>([]);
@@ -178,8 +185,29 @@ export default function CurriculumPage() {
     };
   }, [id]);
 
+  // For locally-uploaded curricula, fetch the presigned MinIO URL so the
+  // HTML5 <video> element can stream it. No-op for YouTube curricula (the
+  // react-youtube player streams directly and never hits this endpoint).
   useEffect(() => {
-    setLoadingTimeout(false);
+    if (!id || data?.source_type !== "upload") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authFetch(`/api/v1/curricula/${id}/video`);
+        if (!res.ok) return;
+        const body = await res.json();
+        if (cancelled) return;
+        if (body?.video_url) setUploadVideoUrl(String(body.video_url));
+      } catch {
+        /* non-fatal: player shows a load error via the timeout path */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, data?.source_type]);
+
+  useEffect(() => {
     setPlayerReady(false);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setLoadingTimeout(true), 15000);
@@ -301,6 +329,51 @@ export default function CurriculumPage() {
     lastTimeRef.current = 0;
   };
 
+  // Wire the HTML5 <video> element into the same PlayerHandle interface the
+  // YouTube player exposes, so the poll loop, anti-scrub, heartbeat and resume
+  // logic all work unchanged for uploaded curricula. Mirrors the YouTube
+  // onReady handler: builds the handle, marks the player ready, seeds duration,
+  // and applies the persisted resume position once.
+  const handleVideoReady = useCallback(() => {
+    const el = videoElRef.current;
+    if (!el) return;
+    const handle: PlayerHandle = {
+      getCurrentTime: () => el.currentTime || 0,
+      getDuration: () => el.duration || 0,
+      pauseVideo: () => el.pause(),
+      playVideo: () => {
+        void el.play().catch(() => {
+          /* autoplay may be blocked; user can press play */
+        });
+      },
+      seekTo: (seconds: number) => {
+        el.currentTime = Math.max(0, seconds);
+      },
+    };
+    playerRef.current = handle;
+    setPlayerReady(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    try {
+      setDuration(el.duration || 0);
+    } catch {
+      /* ignore */
+    }
+    if (!resumeAppliedRef.current) {
+      resumeAppliedRef.current = true;
+      const target = resumeTargetRef.current;
+      if (target > 1) {
+        try {
+          el.currentTime = target;
+        } catch {
+          /* ignore */
+        }
+        lastTimeRef.current = target;
+        maxWatchedRef.current = Math.max(maxWatchedRef.current, target);
+        setCurrentTime(target);
+      }
+    }
+  }, []);
+
   if (error) return (
     <div className="mx-auto max-w-4xl px-6 py-10">
       <div className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700">
@@ -328,6 +401,10 @@ export default function CurriculumPage() {
 
   const videoUrl = data.video_url || "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
   const videoId = getYouTubeId(videoUrl);
+  // Uploaded curricula stream a local file via the presigned MinIO URL and an
+  // HTML5 <video> element; YouTube curricula keep the react-youtube player
+  // path completely unchanged.
+  const isUpload = data.source_type === "upload";
 
   return (
     <AppLayout>
@@ -355,7 +432,57 @@ export default function CurriculumPage() {
           {/* Main Video & Progress */}
           <div className="space-y-4">
             <div className="rounded-lg overflow-hidden bg-black aspect-video relative">
-              {videoId ? (
+              {isUpload ? (
+                /* ── Uploaded video: HTML5 <video> (same styling as the
+                   MediaTabs/Recap players). The onLoadedMetadata handler wires
+                   it into the shared PlayerHandle so every existing feature
+                   (checkpoint poll, anti-scrub, heartbeat, resume) is reused. */
+                <>
+                  {uploadVideoUrl ? (
+                    <video
+                      ref={videoElRef}
+                      key={iframeKey}
+                      src={uploadVideoUrl}
+                      controls
+                      controlsList="nodownload noplaybackrate"
+                      disablePictureInPicture
+                      className="h-full w-full object-contain"
+                      onLoadedMetadata={handleVideoReady}
+                      onError={() => setLoadingTimeout(true)}
+                      onEnded={() => {
+                        if (usePlayerStore.getState().isExerciseOpen) return;
+                        const cps = checkpointsRef.current;
+                        for (let i = cps.length - 1; i >= 0; i--) {
+                          const cp = cps[i];
+                          if (triggeredRef.current.has(cp.id)) continue;
+                          if (duration > 0 && cp.ts >= duration - 2) {
+                            triggeredRef.current.add(cp.id);
+                            openExerciseModal(cp, i);
+                            return;
+                          }
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <LoadingSpinner size={32} />
+                    </div>
+                  )}
+                  {loadingTimeout && !playerReady && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 p-4">
+                      <p className="text-white text-sm text-center mb-3">
+                        Video taking too long to load.
+                      </p>
+                      <button
+                        onClick={handleRetry}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white font-medium transition"
+                      >
+                        🔄 Retry
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : videoId ? (
                 <>
                   <YouTube
                     key={iframeKey}
