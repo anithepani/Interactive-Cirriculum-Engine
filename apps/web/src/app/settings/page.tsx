@@ -129,8 +129,22 @@ export default function SettingsPage() {
             <LoadingSpinner size={32} />
           </div>
         ) : (
-          <div className="space-y-8">
+          <form onSubmit={handleSave} className="space-y-8">
             
+            {error && (
+              <div className="flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 shadow-sm">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
+                {error}
+              </div>
+            )}
+            
+            {success && (
+              <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 shadow-sm">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                {success}
+              </div>
+            )}
+
             {/* Customization Section */}
             <div className="rounded-[2rem] border border-ink/10 bg-white p-8 shadow-sm">
               <div className="flex items-center justify-between mb-6">
@@ -199,21 +213,7 @@ export default function SettingsPage() {
             <div className="rounded-[2rem] border border-ink/10 bg-white p-8 shadow-sm">
               <h2 className="font-display text-xl font-semibold text-ink mb-6">Profile & Security</h2>
               
-              {error && (
-                <div className="mb-6 flex items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  <AlertTriangle className="h-4 w-4 shrink-0 text-rose-500" />
-                  {error}
-                </div>
-              )}
-              
-              {success && (
-                <div className="mb-6 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
-                  {success}
-                </div>
-              )}
-
-              <form onSubmit={handleSave} className="space-y-6">
+              <div className="space-y-6">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-ink-soft">Full Name</label>
                   <input
@@ -250,21 +250,22 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
-
-                <div className="pt-4 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-full bg-indigo-600 px-8 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"
-                  >
-                    {saving ? <LoadingSpinner size={16} /> : <Save className="h-4 w-4" />}
-                    Save Changes
-                  </button>
-                </div>
-              </form>
+              </div>
             </div>
             
-          </div>
+            {/* Save Button */}
+            <div className="flex justify-end sticky bottom-6 pb-6">
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-full bg-indigo-600 px-10 py-4 text-base font-semibold text-white shadow-xl shadow-indigo-600/20 transition hover:bg-indigo-700 hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:opacity-50"
+              >
+                {saving ? <LoadingSpinner size={18} /> : <Save className="h-5 w-5" />}
+                Save All Settings
+              </button>
+            </div>
+            
+          </form>
         )}
       </div>
     </AppLayout>
