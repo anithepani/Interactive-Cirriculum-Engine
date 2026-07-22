@@ -42,7 +42,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-0 hidden h-screen flex-col border-r border-ink/10 bg-white py-8 transition-all duration-300 lg:flex ${
+      className={`fixed left-0 top-0 z-50 hidden h-screen flex-col border-r border-ink/10 bg-white py-8 transition-all duration-300 lg:flex ${
         isSidebarCollapsed ? "w-20" : "w-64"
       }`}
     >

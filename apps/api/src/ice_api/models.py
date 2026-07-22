@@ -13,7 +13,8 @@ from sqlalchemy import (
     Index,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID, ARRAY
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ice_shared.db import Base
@@ -305,3 +306,24 @@ class Notification(Base):
     read_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     __table_args__ = (Index("ix_notifications_user_created", "user_id", "created_at"),)
+class ResourceNode(Base):
+    __tablename__ = "resource_nodes"
+    id = Column(String, primary_key=True)
+    title = Column(String)
+    url = Column(String)
+    tags = Column(ARRAY(String), index=True)
+    vector_embedding = Column(Vector(768))
+    is_foundational = Column(Boolean, default=False)
+
+class UserSkillProfile(Base):
+    __tablename__ = "user_skill_profiles"
+    user_id = Column(Integer, primary_key=True)
+    weak_concepts = Column(ARRAY(String))
+
+class UserInterestCentroid(Base):
+    __tablename__ = "user_interest_centroids"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("user_skill_profiles.user_id", ondelete="CASCADE"), index=True)
+    topic_centroid = Column(String)
+    vector_embedding = Column(Vector(768))
+

@@ -8,6 +8,7 @@ import { Plus, Video, RefreshCw, AlertTriangle, Trash2, X, ChevronRight, BookOpe
 import LoadingSpinner from "@/components/LoadingSpinner";
 import CurriculumCard from "@/components/CurriculumCard";
 import AppLayout from "@/components/layout/AppLayout";
+import RecommendationGrid from "@/components/RecommendationGrid";
 import { DashboardAreaChart, DashboardDonutChart, MiniCalendar } from "@/components/dashboard/Charts";
 import { authFetcher, authFetch, getCurrentUser, type AuthUser } from "@/lib/auth";
 import { staggerContainer } from "@/lib/motion";
@@ -338,6 +339,8 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-8 xl:col-span-2">
           
           <HeroBanner user={user} />
+          
+          <RecommendationGrid />
           
           <StatsRow data={data} />
 
