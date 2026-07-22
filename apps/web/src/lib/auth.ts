@@ -6,6 +6,9 @@ export interface AuthUser {
   id: number;
   name: string;
   email: string;
+  avatar_url?: string;
+  streak_count?: number;
+  streak_color?: string;
 }
 
 export interface TokenResponse {
@@ -108,7 +111,7 @@ export async function authFetch(
 }
 
 export async function getCurrentUser(): Promise<AuthUser | null> {
-  const res = await authFetch("/api/v1/auth/me");
+  const res = await authFetch("/api/v1/auth/me", { cache: "no-store" });
   if (!res.ok) return null;
   return res.json();
 }
