@@ -727,7 +727,7 @@ async def upload_curriculum(
         ext = os.path.splitext(filename)[1].lower()
         allowed = {
             e.strip().lower()
-            for e in _settings.settings.pipeline.upload_allowed_exts.split(",")
+            for e in _settings.pipeline.upload_allowed_exts.split(",")
             if e.strip()
         }
         if ext not in allowed:
@@ -739,7 +739,7 @@ async def upload_curriculum(
                 ),
             )
 
-        max_bytes = int(_settings.settings.pipeline.upload_max_bytes)
+        max_bytes = int(_settings.pipeline.upload_max_bytes)
 
         # ── Create the curriculum row first so we have an id for the key ──
         curriculum = Curriculum(
@@ -762,7 +762,7 @@ async def upload_curriculum(
         # ── Stream the upload to a temp file in bounded chunks (size-guarded),
         # then upload to MinIO off the event loop ─────────────────────────
         s3 = get_s3_client()
-        bucket = _settings.settings.s3.bucket
+        bucket = _settings.s3.bucket
         tmp_path = ""
         try:
             with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
@@ -1221,14 +1221,14 @@ async def get_upload_video_url(
         external_s3 = boto3.client(
             "s3",
             endpoint_url=external_endpoint,
-            aws_access_key_id=_settings.settings.s3.access_key,
-            aws_secret_access_key=_settings.settings.s3.secret_key,
+            aws_access_key_id=_settings.s3.access_key,
+            aws_secret_access_key=_settings.s3.secret_key,
             config=Config(signature_version="s3v4"),
             region_name="us-east-1",
         )
         url = external_s3.generate_presigned_url(
             "get_object",
-            Params={"Bucket": _settings.settings.s3.bucket, "Key": s3_key},
+            Params={"Bucket": _settings.s3.bucket, "Key": s3_key},
             ExpiresIn=7 * 24 * 3600,
         )
 
