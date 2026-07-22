@@ -35,8 +35,8 @@ export default function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
 
-  // Hide Navbar on app routes (dashboard, exercises, progress, settings, upload, curriculum)
-  const isAppRoute = /^\/(dashboard|exercises|progress|settings|upload|curriculum)/.test(pathname || "");
+  // Hide Navbar on app routes
+  const isAppRoute = /^\/(dashboard|exercises|progress|settings|upload|curriculum|support|discover|curricula|reader)/.test(pathname || "");
 
   useEffect(() => {
     setAuthed(isAuthenticated());

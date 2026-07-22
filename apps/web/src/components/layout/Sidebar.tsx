@@ -14,17 +14,27 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  Compass,
 } from "lucide-react";
 import { removeTokens } from "@/lib/auth";
 import { useLayoutStore } from "@/lib/store";
 
+function HelpCenterIcon(props: any) {
+  return (
+    <span className={`material-symbols-outlined text-[20px] ${props.className || ''}`}>
+      help_center
+    </span>
+  );
+}
+
 const MENU_ITEMS = [
   { label: "Overview", isHeader: true },
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "My Curricula", href: "/upload", icon: Library },
+  { label: "Discover", href: "/discover", icon: Compass },
+  { label: "My Curricula", href: "/curricula", icon: Library },
   { label: "Exercises", href: "/exercises", icon: Dumbbell },
   { label: "Progress", href: "/progress", icon: LineChart },
-  { label: "Support", href: "/support", icon: LifeBuoy },
+  { label: "Support", href: "/support", icon: HelpCenterIcon },
   { label: "Settings", isHeader: true, className: "mt-6" },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
@@ -42,7 +52,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className={`fixed left-0 top-0 z-50 hidden h-screen flex-col border-r border-ink/10 bg-white py-8 transition-all duration-300 lg:flex ${
+      className={`sticky top-0 self-start z-40 hidden h-screen shrink-0 flex-col border-r border-ink/10 bg-white py-8 transition-all duration-300 lg:flex ${
         isSidebarCollapsed ? "w-20" : "w-64"
       }`}
     >

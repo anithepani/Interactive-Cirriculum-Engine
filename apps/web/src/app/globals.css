@@ -43,6 +43,12 @@
   background-color: rgb(39 39 42); /* zinc-800 */
 }
 
+/* Soften dark mode borders which are too stark when set to white/10 */
+.dark [class*="border-ink/"] {
+  border-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+
 /* Study-guide / recap prose: hardcoded dark indigo text is invisible on a
    dark surface — lighten in dark mode. */
 .dark .recap-summary {

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 import { ThemeProvider, createTheme, CssBaseline, PaletteMode } from "@mui/material";
 
 interface ThemeModeContextValue {
@@ -25,38 +26,46 @@ export default function ThemeProviders({ children }: { children: React.ReactNode
   // preference below.
   const [mode, setMode] = useState<PaletteMode>("light");
 
+  const pathname = usePathname();
+  const isLandingPage = pathname === "/";
+
   useEffect(() => {
     const storedMode = window.localStorage.getItem("ice-theme") as PaletteMode | null;
     const initial: PaletteMode =
       storedMode === "light" || storedMode === "dark" ? storedMode : "light";
     setMode(initial);
-    // Sync the Tailwind `dark` class on <html> with the stored preference.
-    document.documentElement.classList.toggle("dark", initial === "dark");
-    // No stored preference -> stay light (matches the Tailwind design system);
-    // we intentionally do NOT auto-switch to dark from the OS setting, which is
-    // what previously blanked the light review page.
-  }, []);
+    
+    if (isLandingPage) {
+      document.documentElement.classList.remove("dark");
+    } else {
+      document.documentElement.classList.toggle("dark", initial === "dark");
+    }
+  }, [isLandingPage]);
 
   const colorMode = useMemo(
     () => ({
-      mode,
+      mode: isLandingPage ? "light" : mode,
       toggleColorMode: () => {
         setMode((prevMode) => {
           const nextMode = prevMode === "light" ? "dark" : "light";
           window.localStorage.setItem("ice-theme", nextMode);
-          document.documentElement.classList.toggle("dark", nextMode === "dark");
+          if (!isLandingPage) {
+            document.documentElement.classList.toggle("dark", nextMode === "dark");
+          }
           return nextMode;
         });
       },
     }),
-    [mode]
+    [mode, isLandingPage]
   );
+
+  const activeMode = isLandingPage ? "light" : mode;
 
   const theme = useMemo(
     () =>
       createTheme({
         palette: {
-          mode,
+          mode: activeMode,
           primary: {
             main: "#6366f1",
           },
@@ -64,12 +73,12 @@ export default function ThemeProviders({ children }: { children: React.ReactNode
             main: "#22d3ee",
           },
           background: {
-            default: mode === "dark" ? "#020617" : "#f8fafc",
-            paper: mode === "dark" ? "rgba(15, 23, 42, 0.9)" : "#ffffff",
+            default: activeMode === "dark" ? "#020617" : "#f8fafc",
+            paper: activeMode === "dark" ? "rgba(15, 23, 42, 0.9)" : "#ffffff",
           },
           text: {
-            primary: mode === "dark" ? "#f8fafc" : "#111827",
-            secondary: mode === "dark" ? "#94a3b8" : "#4b5563",
+            primary: activeMode === "dark" ? "#f8fafc" : "#111827",
+            secondary: activeMode === "dark" ? "#94a3b8" : "#4b5563",
           },
           divider: "rgba(148, 163, 184, 0.18)",
           action: {
@@ -89,7 +98,7 @@ export default function ThemeProviders({ children }: { children: React.ReactNode
           borderRadius: 20,
         },
       }),
-    [mode]
+    [activeMode]
   );
 
   return (
