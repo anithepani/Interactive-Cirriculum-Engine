@@ -65,6 +65,7 @@ export default function CurriculumCard({
       animate="visible"
       whileHover={{
         y: -4,
+        scale: 1.02,
         boxShadow: "0 16px 40px rgba(0,0,0,0.10)",
         transition: { type: "spring", stiffness: 260, damping: 22 },
       }}

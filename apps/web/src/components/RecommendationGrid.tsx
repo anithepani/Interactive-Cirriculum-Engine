@@ -3,7 +3,8 @@
 import React from "react";
 import useSWR from "swr";
 import { motion, AnimatePresence } from "framer-motion";
-import { ExternalLink, Sparkles, AlertCircle, Compass, CheckCircle2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ExternalLink, Sparkles, AlertCircle, Compass, CheckCircle2, X } from "lucide-react";
 import { authFetcher } from "@/lib/auth";
 
 export interface RecommendationCardData {
@@ -31,6 +32,7 @@ const cardVariants = {
 };
 
 export default function RecommendationGrid() {
+  const router = useRouter();
   const { data: recommendations, error, isLoading } = useSWR<RecommendationCardData[]>(
     "/api/v1/recommendations/feed",
     authFetcher
@@ -98,14 +100,12 @@ export default function RecommendationGrid() {
       >
         <AnimatePresence>
           {recommendations.map((item) => (
-            <motion.a
+            <motion.button
               key={item.id}
-              href={item.url}
-              target="_blank"
-              rel="noopener noreferrer"
+              onClick={() => router.push(`/reader?url=${encodeURIComponent(item.url)}`)}
               variants={cardVariants}
               whileHover="hover"
-              className="group relative flex flex-col justify-between p-6 rounded-[2.5rem] bg-white border border-ink/5 shadow-sm overflow-hidden cursor-pointer"
+              className="group relative flex flex-col justify-between p-6 rounded-[2.5rem] bg-white border border-ink/5 shadow-sm overflow-hidden cursor-pointer text-left"
             >
               {/* Animated Gradient Glow */}
               <div className="absolute inset-0 bg-gradient-to-br from-indigo-50/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
@@ -150,7 +150,7 @@ export default function RecommendationGrid() {
                   <ExternalLink className="w-4 h-4" />
                 </div>
               </div>
-            </motion.a>
+            </motion.button>
           ))}
         </AnimatePresence>
       </motion.div>
