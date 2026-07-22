@@ -379,8 +379,12 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
 
     # Feed the instructor's on-screen code (M3 vision OCR) into M7 so coding/
     # debug prompts are grounded in the real lesson context (Phase 4, Task 3).
-    # Safe fallback: if vision failed or produced no code regions this is an
-    # empty list and M7 behaves exactly as before.
+    # Issue 3: the per-segment ``seg_instructor_code`` map (built above) is the
+    # PRIMARY grounding source passed as ``segment_code`` — it scopes each
+    # checkpoint to its OWN segment's code so unrelated code from other segments
+    # never leaks into a snippet. This flat list is only a last-resort fallback
+    # for checkpoints whose segment has no scoped code. If vision failed or
+    # produced no code regions this is an empty list and M7 behaves as before.
     instructor_code: list[str] = []
     for vi in visual_items:
         if isinstance(vi, dict):
@@ -404,6 +408,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         instructor_code=instructor_code,
         segment_texts=segment_texts,
         category=content_category,
+        segment_code=seg_instructor_code,
     )
     ex_map = await persist.persist_exercises(tenant_id, exercises, cp_map)
 

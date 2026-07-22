@@ -152,6 +152,7 @@ def generate_exercises(
     instructor_code: list[str] | str | None = None,
     segment_texts: dict[Any, str] | list[str] | None = None,
     category: str | None = None,
+    segment_code: dict[Any, str] | list[str] | None = None,
 ) -> list[dict]:
     """Generate one exercise per checkpoint.
 
@@ -179,6 +180,14 @@ def generate_exercises(
             a programming video where coding/debug exercises are appropriate).
             The ``_remap_non_technical`` safety net still overrides inappropriate
             types when a checkpoint's content is non-technical.
+        segment_code: Optional per-segment instructor code (M3 OCR) as a mapping
+            ``{segment_id: code}`` or a list aligned to ``segments`` by index.
+            Issue 3: when provided, each checkpoint is grounded ONLY in its own
+            segment's on-screen code — never the whole video's concatenated OCR
+            dump. This prevents unrelated code from other segments (e.g. a
+            BeautifulSoup scraper) leaking into an unrelated exercise's context.
+            Falls back to the flat ``instructor_code`` only when no per-segment
+            code exists for a checkpoint's segment (backward compatible).
 
     Returns:
         A list of exercise dicts, each validated against ``ice_contracts.Exercise``.
@@ -187,6 +196,7 @@ def generate_exercises(
     concepts_list = _normalise_concepts(concepts)
     code_str = _join_instructor_code(instructor_code)
     text_map = _normalise_segment_texts(segment_texts, segments)
+    code_map = _normalise_segment_texts(segment_code, segments)
 
     exercises: list[dict] = []
     for cp in checkpoints:
@@ -202,8 +212,13 @@ def generate_exercises(
         # segment (falls back to the summary inside _build_prompt when empty).
         seg_transcript = _lookup_segment_text(cp, seg, text_map)
 
-        prompt = _build_prompt(etype, cp, seg, conc, code_str, seg_transcript, category)
-        ex_dict = _generate_one(client, prompt, cp, etype, code_str)
+        # Issue 3: prefer this checkpoint's OWN segment code so context/grounding
+        # never pulls in code from unrelated segments. Only fall back to the flat
+        # global blob when this segment has no scoped code (legacy callers).
+        cp_code = _lookup_segment_text(cp, seg, code_map) or code_str
+
+        prompt = _build_prompt(etype, cp, seg, conc, cp_code, seg_transcript, category)
+        ex_dict = _generate_one(client, prompt, cp, etype, cp_code)
         if ex_dict is not None:
             exercises.append(ex_dict)
         else:
