@@ -230,6 +230,36 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     await persist.set_curriculum_status(curriculum_id, tenant_id, "ready", ready=True)
     logger.info("curriculum %s ready", curriculum_id)
 
+    # ── Auto-trigger cinematic summary (signal video) ──────────────────────────
+    # Once the curriculum is ready, kick off the signal video automatically so
+    # the learner doesn't have to press the button. Idempotent: if a signal is
+    # already queued/processing/ready (e.g. the manual button was pressed first)
+    # skip. A failure here must never fail the curriculum generation, so it's
+    # fully isolated.
+    try:
+        from ice_api.models import Curriculum
+        from ice_shared.db import get_session_factory
+
+        should_dispatch = False
+        factory = get_session_factory()
+        async with factory() as session:
+            c = await session.get(Curriculum, int(curriculum_id))
+            if c and c.signal_status not in ("queued", "processing", "ready"):
+                c.signal_status = "queued"
+                await session.commit()
+                should_dispatch = True
+        if should_dispatch:
+            celery_app.send_task(
+                "ice.worker.generate_signal_video",
+                args=[str(curriculum_id), str(tenant_id)],
+            )
+            logger.info("auto-triggered signal video for curriculum %s", curriculum_id)
+    except Exception:
+        logger.exception(
+            "failed to auto-trigger signal video for curriculum %s",
+            curriculum_id,
+        )
+
 
 async def _mark_failed(
     curriculum_id: str, tenant_id: str, reason: str

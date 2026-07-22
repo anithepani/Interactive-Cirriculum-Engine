@@ -143,10 +143,11 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
         apps_dir = os.path.dirname(worker_dir)
         remotion_dir = os.path.join(apps_dir, "remotion")
         
-        # Call Gemini
-        import google.generativeai as genai
-        genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-        model = genai.GenerativeModel("gemini-3.1-flash-lite", generation_config={"response_mime_type": "application/json"})
+        # Call Gemini (dynamic model selection w/ fallback — shared with recap).
+        # Hardcoding the model name silently broke this task when the name was
+        # not served; list_models() + fallback makes failures loud.
+        from ice_worker.tasks._gemini import get_gemini_model
+        model = get_gemini_model(generation_config={"response_mime_type": "application/json"})
         
         prompt = f"""You are an expert documentary producer and technical educator. I have a transcript of an educational video.
 I need you to select the highest-signal, most important sentences to create a summary.
@@ -226,7 +227,7 @@ Transcript:
             
         final_video_path = os.path.join(tmpdir, "signal_video.mp4")
         
-        # 4. Run remotion render
+        # 4. Run remotion render (failures must surface a status + full log)
         render_cmd = [
             "npx", "remotion", "render", "src/index.ts", "MainComp", final_video_path,
             "--props", props_path
@@ -234,12 +235,18 @@ Transcript:
         
         render_cmd_str = " ".join(render_cmd)
         logger.info(f"Rendering Remotion video... {render_cmd_str}")
-        # When using shell=True, pass the command as a single string
-        res_render = subprocess.run(render_cmd_str, cwd=remotion_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
-        if res_render.returncode != 0:
-            logger.error(f"Remotion render error: {res_render.stderr}\n{res_render.stdout}")
+        try:
+            # When using shell=True, pass the command as a single string
+            res_render = subprocess.run(render_cmd_str, cwd=remotion_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True)
+            if res_render.returncode != 0:
+                logger.error(f"Remotion render error: {res_render.stderr}\n{res_render.stdout}")
+        except Exception as render_exc:
+            logger.error(f"Remotion render subprocess failed: {render_exc}", exc_info=True)
+            await _set_status(curriculum_id, tenant_id, "failed")
+            return
         
         if not os.path.exists(final_video_path):
+            logger.error("Remotion render produced no output file at %s", final_video_path)
             await _set_status(curriculum_id, tenant_id, "failed")
             return
             
@@ -265,11 +272,49 @@ Transcript:
             ExpiresIn=3600*24*7
         )
         
-        # Rewrite internal minio host to localhost for the browser
-        presigned = presigned.replace("http://minio:9000", "http://localhost:9000")
+        # Generate a browser-valid presigned URL via an external-facing MinIO
+        # client (mirrors recap.py). String-replacing the internal minio:9000
+        # host can invalidate the S3 signature; signing against the external
+        # endpoint avoids that entirely.
+        import boto3
+        from botocore.config import Config
+
+        external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", "http://localhost:9000")
+        external_s3 = boto3.client(
+            's3',
+            endpoint_url=external_endpoint,
+            aws_access_key_id=settings.s3.access_key,
+            aws_secret_access_key=settings.s3.secret_key,
+            config=Config(signature_version='s3v4'),
+            region_name=settings.s3.region,
+        )
+        presigned = external_s3.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': settings.s3.bucket, 'Key': s3_key},
+            ExpiresIn=7 * 24 * 3600,
+        )
         
         await _set_status(curriculum_id, tenant_id, "ready", presigned)
 
-@celery_app.task(name="ice.worker.generate_signal_video")
-def generate_signal_video(curriculum_id: str, tenant_id: str) -> None:
-    asyncio.run(_run_signal_video(curriculum_id, tenant_id))
+async def _run_with_failover(curriculum_id: str, tenant_id: str) -> None:
+    try:
+        await _run_signal_video(curriculum_id, tenant_id)
+    except Exception as exc:
+        logger.error(f"Signal video generation failed: {exc}", exc_info=True)
+        try:
+            await _set_status(int(curriculum_id), tenant_id, "failed")
+        except Exception:
+            pass
+        raise
+
+
+@celery_app.task(
+    name="ice.worker.generate_signal_video",
+    bind=True,
+    autoretry_for=(Exception,),
+    max_retries=1,
+)
+def generate_signal_video(self: Any, curriculum_id: str, tenant_id: str) -> None:
+    logger.info("generate_signal_video: cid=%s tenant=%s", curriculum_id, tenant_id)
+    reset_engine()
+    asyncio.run(_run_with_failover(curriculum_id, tenant_id))
