@@ -12,6 +12,26 @@ This repository is the foundational blueprint for a 3-person project that turns 
 
 `v0.1.0` — Phase 0 (R&D Spike & Foundations). Decisions locked; contracts being ratified.
 
+### `feat/performance-upload-difficulty` (Phases 1–5)
+
+In-progress feature branch delivering performance, upload, and difficulty work:
+
+- **Local video upload** — drag-and-drop a local file (`.mp4`/`.mov`/`.mkv`/`.webm`/
+  `.avi`/`.m4v`, ≤ 2 GiB) onto the upload page; the curriculum page plays it with an
+  HTML5 `<video>` player (checkpoints, progress tracking, anti-scrub, and exercises
+  all work identically to the YouTube path).
+- **Difficulty selector** — choose Easy / Medium / Hard on the upload page; it tunes
+  checkpoint spacing and exercise difficulty (existing curricula default to Medium).
+- **Dynamic exercise types** — a content classifier labels each curriculum
+  (programming / theory / conceptual / motivational / mixed) so exercise types fit
+  the video; coding/debug tasks are gated by a per-segment code-grounding guarantee.
+- **Vision performance** — seek-based frame sampling, threaded OCR, and frame
+  downscaling cut M3 extraction to < 2 min for a 10-min video on CPU.
+- **Signal video** — a cinematic summary auto-generates when a curriculum is ready
+  (manual trigger also available on the curriculum page).
+
+See the [Verification Runbook](docs/verification_runbook.md) for manual test steps.
+
 ## Team & Ownership
 
 | Owner | Domain | Primary modules |
@@ -66,6 +86,7 @@ make dev
 
 # 4. Apply database migrations
 make migrate
+#   -> for the difficulty column, also run: python add_curriculum_difficulty.py
 
 # 5. Seed sample data
 make seed
@@ -76,6 +97,12 @@ make run-pipeline
 
 - **API:** http://localhost:8000  (OpenAPI docs at `/docs`)
 - **Web:** http://localhost:3000
+
+> **Upload page:** the `/upload` page now accepts either a YouTube URL **or** a
+> local video file (drag-and-drop), and a **Difficulty** selector (Easy / Medium /
+> Hard, default Medium) controls checkpoint density and exercise difficulty.
+> For local-file playback, set `MINIO_EXTERNAL_ENDPOINT` to the browser-reachable
+> MinIO URL if the browser can't reach the default `http://localhost:9000`.
 
 ### Windows (Docker Desktop + WSL2): space-free path required
 
@@ -119,6 +146,7 @@ We use **trunk-based GitHub Flow** with phase release tags. See [CONTRIBUTING.md
 - [Research reading list (§7)](docs/research/)
 - [Prompt library guide](docs/prompts/)
 - [Operational runbooks](docs/runbooks/)
+- [Verification runbook (Phases 1–5)](docs/verification_runbook.md) — manual test steps for local upload, difficulty, dynamic exercise types, performance, and the signal video.
 - [Onboarding](docs/onboarding/)
 
 ## Source Documents
