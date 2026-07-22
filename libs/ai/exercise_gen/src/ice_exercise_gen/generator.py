@@ -457,24 +457,68 @@ def _parse_json(raw: str) -> dict:
     return json.loads(text)
 
 
+# Phrases in a prompt that explicitly point the learner at a provided code
+# snippet ("the following code has a bug", "in the code shown above", "the
+# function below"). Only when the prompt REFERENCES code do we attach a snippet.
+_CODE_REFERENCE_PHRASES = (
+    "following code", "code below", "code above", "code shown", "shown above",
+    "shown below", "snippet", "this function", "the function below",
+    "the function above", "the code", "given code", "below code",
+    "consider the", "in the code", "this code", "the program below",
+)
+
+# Strong signals that a line of text is itself source code (used to detect when
+# the prompt already quotes the snippet inline, and to validate a snippet).
+# NOTE: kept to tokens that don't occur as ordinary English words — "function "
+# is intentionally excluded here because prompts say "write a function greet"
+# without quoting any code (that must NOT trigger a snippet).
+_CODE_LINE_MARKERS = ("def ", "class ", "import ", "console.", "print(", "return ")
+
+
+def _prompt_references_code(prompt: str) -> bool:
+    """True when the exercise prompt explicitly refers to a provided snippet."""
+    low = prompt.lower()
+    if any(p in low for p in _CODE_REFERENCE_PHRASES):
+        return True
+    # A fenced block or an obvious quoted code line inside the prompt also counts
+    # as "the prompt is talking about this specific code".
+    if "```" in prompt:
+        return True
+    return any(m in low for m in _CODE_LINE_MARKERS)
+
+
+def _looks_like_real_code(code: str) -> bool:
+    """Cheap validation that a snippet is actual code, not leftover OCR noise."""
+    low = code.lower()
+    kw = ("def ", "class ", "import ", "function ", "console.", "print(")
+    if not any(m in low for m in kw):
+        # Fall back to structural evidence: an assignment or call with a colon
+        # block is still code even without a keyword.
+        if not any(("=" in ln or "(" in ln) and ln.strip() for ln in code.splitlines()):
+            return False
+    return True
+
+
 def _derive_context(etype: str, payload: dict, code_str: str) -> str | None:
     """Decide the supporting code snippet shown alongside the exercise.
 
-    Issue 2: previously ``context`` was blindly set to the OCR-extracted
-    ``code_str`` for EVERY exercise, so irrelevant IDE/terminal dumps appeared
-    under a "CODE SNIPPET" box — even for MCQ/conceptual questions. Rules:
+    Issue 3 (relevance gate). The snippet must ONLY appear when the exercise
+    genuinely references code from the video — never as a blanket OCR dump:
 
-    - coding / debug (technical, Phase 4): attach the instructor's OCR code as
-      grounding context so the learner sees the real lesson code the exercise
-      is anchored to — UNLESS the same snippet is already reproduced in the
-      editor (starter/buggy_code) or the prompt, in which case a second copy
-      would only clutter the UI.
-    - mcq / conceptual: only attach the OCR code when it is substantial and not
-      already reproduced in the prompt (some questions quote the snippet inline).
-    - never attach empty/whitespace-only or trivially short OCR fragments.
+    - coding: HIDDEN by default. A from-scratch task like "write a greet
+      function" needs no snippet. Attach only when the prompt explicitly refers
+      to provided code (e.g. "complete the function below") AND that code isn't
+      already reproduced in the editor (starter).
+    - debug: attach the segment's related code as grounding, but only when it is
+      NOT already the buggy_code shown in the editor (avoid a duplicate copy).
+    - mcq / conceptual: attach ONLY when the prompt explicitly quotes/references
+      a code block (e.g. "what does the following code print?"). Otherwise None.
+
+    In all cases the snippet must be non-trivial, look like real code, and not
+    duplicate what the prompt already contains.
     """
     code = (code_str or "").strip()
-    if not code or len(code) < 12:
+    if not code or len(code) < 20 or not _looks_like_real_code(code):
         return None
 
     prompt = str(payload.get("prompt", "") or "")
@@ -482,18 +526,27 @@ def _derive_context(etype: str, payload: dict, code_str: str) -> str | None:
     if code[:40] in prompt:
         return None
 
-    if etype in ("debug", "coding"):
-        # Phase 4: technical types attach the OCR instructor code as grounding.
-        # Skip only when the editor content (starter/buggy_code) already
-        # contains this exact snippet, so we never show a redundant copy.
-        editor_code = str(
-            payload.get("starter", "") or payload.get("buggy_code", "") or ""
-        )
-        if code[:40] and code[:40] in editor_code:
-            return None
+    editor_code = str(
+        payload.get("starter", "") or payload.get("buggy_code", "") or ""
+    )
+    # Never show a second copy of the exact code already in the editor.
+    if code[:40] and code[:40] in editor_code:
+        return None
+
+    if etype == "debug":
+        # Debug: the learner analyses provided code, so grounding context is
+        # relevant — but only if it isn't just the buggy_code already shown.
         return code
 
-    return code
+    if etype == "coding":
+        # Hide unless the prompt explicitly references a provided snippet.
+        return code if _prompt_references_code(prompt) else None
+
+    if etype in ("mcq", "conceptual"):
+        # Only when the question is explicitly ABOUT a code block.
+        return code if _prompt_references_code(prompt) else None
+
+    return None
 
 
 def _build_exercise_dict(cp: dict, etype: str, payload: dict, code_str: str) -> dict:
