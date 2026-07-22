@@ -91,9 +91,55 @@ def _remap_non_technical(etype: str, seg: dict, conc: dict) -> str:
         return remapped
     return etype
 
+
+# Phase 5: human-readable context lines per classified content category,
+# injected into the prompt so the LLM tailors the exercise to the video's kind.
+_CATEGORY_CONTEXT = {
+    "programming": (
+        "This is a PROGRAMMING video, so coding and debugging exercises are "
+        "appropriate. Ground any code strictly in the transcript/instructor code."
+    ),
+    "theory": (
+        "This is a THEORY video (formal/academic). Prefer precise conceptual and "
+        "multiple-choice questions that test understanding of the ideas; do not "
+        "invent code unless the transcript clearly contains it."
+    ),
+    "conceptual": (
+        "This is a CONCEPTUAL/explanatory video. Test understanding of the ideas "
+        "with conceptual or multiple-choice questions; avoid coding unless the "
+        "transcript clearly contains code."
+    ),
+    "motivational": (
+        "This is a MOTIVATIONAL/speech video. Keep the exercise light and "
+        "reflective (conceptual or a simple recall MCQ). Do NOT create coding or "
+        "debugging tasks — there is no technical content to ground them in."
+    ),
+    "mixed": (
+        "This video MIXES programming with non-technical content. Choose an "
+        "exercise that fits this specific segment; only produce code tasks when "
+        "the transcript/instructor code for this segment is actually technical."
+    ),
+}
+
+
+def _category_context(category: str | None, etype: str) -> str:
+    """Return a prompt fragment describing the curriculum content category.
+
+    Empty string when no (or an unknown) category is supplied so callers that
+    omit it behave exactly as before (zero-regression).
+    """
+    key = (category or "").strip().lower()
+    line = _CATEGORY_CONTEXT.get(key)
+    if not line:
+        return ""
+    return (
+        "\n\n## Content category\n"
+        f"- {line}\n"
+        f"- The requested exercise type for this checkpoint is: {etype}.\n"
+    )
+
+
 adapter: TypeAdapter[Exercise] = TypeAdapter(Exercise)
-
-
 # --------------------------------------------------------------------------- #
 # Public entry point
 # --------------------------------------------------------------------------- #
@@ -105,6 +151,7 @@ def generate_exercises(
     concepts: list[dict],
     instructor_code: list[str] | str | None = None,
     segment_texts: dict[Any, str] | list[str] | None = None,
+    category: str | None = None,
 ) -> list[dict]:
     """Generate one exercise per checkpoint.
 
@@ -125,6 +172,13 @@ def generate_exercises(
             prompt so exercises are grounded in what was really said (not just
             the LLM summary). Safe fallback: when absent/empty the generator
             falls back to the segment summary exactly as before.
+        category: Optional curriculum-level content category from the Phase 5
+            classifier ("programming" | "theory" | "conceptual" |
+            "motivational" | "mixed"). When provided it is injected into the
+            prompt as context so the LLM knows what kind of video this is (e.g.
+            a programming video where coding/debug exercises are appropriate).
+            The ``_remap_non_technical`` safety net still overrides inappropriate
+            types when a checkpoint's content is non-technical.
 
     Returns:
         A list of exercise dicts, each validated against ``ice_contracts.Exercise``.
@@ -148,7 +202,7 @@ def generate_exercises(
         # segment (falls back to the summary inside _build_prompt when empty).
         seg_transcript = _lookup_segment_text(cp, seg, text_map)
 
-        prompt = _build_prompt(etype, cp, seg, conc, code_str, seg_transcript)
+        prompt = _build_prompt(etype, cp, seg, conc, code_str, seg_transcript, category)
         ex_dict = _generate_one(client, prompt, cp, etype, code_str)
         if ex_dict is not None:
             exercises.append(ex_dict)
@@ -289,6 +343,7 @@ def _build_prompt(
     conc: dict,
     code_str: str,
     segment_transcript_text: str = "",
+    category: str | None = None,
 ) -> str:
     template = _load_template(etype)
     difficulty = cp.get("difficulty", conc.get("difficulty", 3))
@@ -325,6 +380,16 @@ def _build_prompt(
     few_shot = _load_few_shot(etype)
     if few_shot:
         prompt += "\n\n## Example output\n```json\n" + few_shot + "\n```"
+
+    # Phase 5: inject the curriculum-level content category as context so the
+    # LLM knows what kind of video this is when writing the exercise (e.g. a
+    # programming video where coding/debug tasks are appropriate, vs a
+    # motivational talk where a reflective conceptual question fits better).
+    # The ``_remap_non_technical`` safety net still overrides inappropriate
+    # types when a specific checkpoint's content is non-technical.
+    category_ctx = _category_context(category, etype)
+    if category_ctx:
+        prompt += category_ctx
 
     # Phase 4 grounding hardening: force the model to stay strictly within the
     # provided transcript + OCR code and forbid inventing facts, APIs, or code

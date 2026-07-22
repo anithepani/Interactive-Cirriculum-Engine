@@ -135,6 +135,55 @@ def _build_segment_texts(transcript: dict, segments: list[dict]) -> dict[str, st
         return {}
 
 
+def _build_segment_instructor_code(
+    visual_items: list, segments: list[dict]
+) -> dict[str, str]:
+    """Build a ``{segment_id: code}`` map from M3 vision OCR code items.
+
+    Phase 5 grounding guarantee: the checkpoint placer only allows coding/debug
+    exercises on a segment when there is concrete evidence it is about code.
+    Here we key each OCR ``code`` visual item to the segment whose [start, end]
+    window contains its timestamp, so the placer can gate code exercises per
+    segment. Best-effort: returns ``{}`` on any problem (the placer then falls
+    back to the transcript-text technicality heuristic).
+    """
+    try:
+        if not visual_items or not segments:
+            return {}
+
+        def _vi_field(vi, name):
+            if isinstance(vi, dict):
+                return vi.get(name)
+            return getattr(vi, name, None)
+
+        def _vi_type(vi) -> str:
+            t = _vi_field(vi, "type")
+            return str(getattr(t, "value", t) or "").lower()
+
+        code_map: dict[str, list[str]] = {}
+        for vi in visual_items:
+            if _vi_type(vi) != "code":
+                continue
+            text = _vi_field(vi, "text")
+            if not text or not str(text).strip():
+                continue
+            try:
+                ts = float(_vi_field(vi, "ts") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            for seg in segments:
+                start = float(seg.get("start", 0.0))
+                end = float(seg.get("end", start))
+                if start <= ts <= end:
+                    sid = str(seg.get("id", ""))
+                    code_map.setdefault(sid, []).append(str(text))
+                    break
+        return {sid: "\n\n".join(parts) for sid, parts in code_map.items() if parts}
+    except Exception:
+        logger.warning("could not build per-segment instructor code; skipping")
+        return {}
+
+
 async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     set_tenant_context(tenant_id)
     await _ensure_tables()
@@ -276,8 +325,40 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     concept_map = await persist.persist_concepts(curriculum_id, tenant_id, graph)
     await persist.persist_edges(tenant_id, graph, concept_map)
 
+    # ---- Phase 5: classify curriculum content ----
+    # Lightweight, called once per curriculum. Drives dynamic exercise-type
+    # relevance in M6 (candidate pool) and M7 (prompt context). Best-effort:
+    # the classifier itself never raises (LLM failure -> keyword fallback), but
+    # we still guard so a missing category can never break generation.
+    from ice_checkpoints import classify_content
+
+    # Reconstruct a compact transcript string for the classifier.
+    transcript_text = " ".join(
+        str(r.get("text") or "").strip()
+        for r in (transcript.get("segments") or [])
+        if str(r.get("text") or "").strip()
+    )
+    try:
+        classification = classify_content(segments, graph, transcript_text)
+    except Exception:
+        logger.warning("Phase 5 classify_content failed; defaulting category")
+        classification = {"category": None, "confidence": 0.0}
+    content_category = classification.get("category")
+    logger.info(
+        "Phase 5 content category=%s (conf=%.2f) for curriculum %s",
+        content_category,
+        float(classification.get("confidence", 0.0) or 0.0),
+        curriculum_id,
+    )
+
     # ---- M6: place checkpoints ----
     from ice_checkpoints import place_checkpoints
+
+    # Phase 5 grounding guarantee: build a {segment_id: code} map from the M3
+    # vision OCR items so the placer only permits coding/debug on segments that
+    # actually have on-screen code (or technical transcript evidence). Empty
+    # map -> the placer falls back to the transcript-text heuristic.
+    seg_instructor_code = _build_segment_instructor_code(visual_items, segments)
 
     checkpoints = place_checkpoints(
         segments,
@@ -286,6 +367,8 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         min_start_sec=settings.pipeline.checkpoint_min_start_sec,
         avoid_final_sec=settings.pipeline.checkpoint_avoid_final_sec,
         difficulty=difficulty,
+        category=content_category,
+        instructor_code=seg_instructor_code,
     )
     cp_map = await persist.persist_checkpoints(
         curriculum_id, tenant_id, checkpoints, seg_map, concept_map
@@ -320,6 +403,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         checkpoints, segments, graph,
         instructor_code=instructor_code,
         segment_texts=segment_texts,
+        category=content_category,
     )
     ex_map = await persist.persist_exercises(tenant_id, exercises, cp_map)
 
