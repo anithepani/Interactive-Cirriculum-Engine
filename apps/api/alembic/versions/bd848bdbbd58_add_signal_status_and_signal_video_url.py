@@ -123,7 +123,7 @@ def upgrade() -> None:
     sa.Column('end_time', sa.Float(), nullable=True),
     sa.Column('title', sa.String(), nullable=True),
     sa.Column('summary', sa.Text(), nullable=True),
-    sa.Column('source_frames', postgresql.JSONB(astext_type=Text()), server_default='[]', nullable=True),
+    sa.Column('source_frames', postgresql.JSONB(astext_type=sa.Text()), server_default='[]', nullable=True),
     sa.Column('structuredness', sa.Float(), nullable=True),
     sa.Column('topic_label', sa.String(), nullable=True),
     sa.Column('confidence', sa.Float(), nullable=True),

@@ -119,7 +119,14 @@ def _token_redirect(access_token: str, refresh_token: str) -> RedirectResponse:
 
 
 def _user_dict(user: User) -> dict:
-    return {"id": user.id, "name": user.name, "email": user.email}
+    return {
+        "id": user.id, 
+        "name": user.name, 
+        "email": user.email,
+        "avatar_url": user.avatar_url,
+        "streak_count": user.streak_count,
+        "streak_color": user.streak_color
+    }
 
 
 # --- OAuth ---
@@ -422,6 +429,8 @@ class UpdateMeRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     current_password: str | None = None
     new_password: str | None = Field(None, min_length=8)
+    avatar_url: str | None = None
+    streak_color: str | None = None
 
 @router.put("/me")
 async def update_me(
@@ -438,6 +447,11 @@ async def update_me(
         current_user.password_hash = hash_password(data.new_password)
         
     current_user.name = sanitize_input(data.name)
+    
+    if data.avatar_url is not None:
+        current_user.avatar_url = data.avatar_url
+    if data.streak_color is not None:
+        current_user.streak_color = data.streak_color
     
     session.add(current_user)
     await session.commit()
