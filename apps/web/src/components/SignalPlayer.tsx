@@ -21,7 +21,7 @@ export default function SignalPlayer({
           Want a Cinematic Summary?
         </h2>
         <p className="mt-2 text-ink-soft max-w-lg mx-auto">
-          Generate a high-quality "Signal-to-Noise" video featuring professional voiceover and dynamic moving visuals.
+          Generate a high-quality &quot;Signal-to-Noise&quot; video featuring professional voiceover and dynamic moving visuals.
         </p>
         <button
           onClick={onTrigger}

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
@@ -243,7 +243,7 @@ function LoadingSkeleton() {
 function RightSidebarStats({ user, data, stats }: { user: AuthUser | null, data?: CurriculumSummary[], stats?: StatsOverview }) {
   // Goal: 5 hours of learning per week
   const goalHours = 5;
-  const hoursLearned = stats?.total_duration_watched ? stats.total_duration_watched / 3600 : 0;
+  const hoursLearned = stats?.watched_seconds ? stats.watched_seconds / 3600 : 0;
   const progressPercent = Math.min((hoursLearned / goalHours) * 100, 100);
   const strokeDashoffset = 289 - (289 * progressPercent) / 100;
 

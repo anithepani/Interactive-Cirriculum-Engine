@@ -41,7 +41,7 @@ export default function MediaTabs({
           <div className="py-12 text-center">
             <h2 className="font-display text-xl font-bold text-ink">Want a Cinematic Summary?</h2>
             <p className="mx-auto mt-2 max-w-lg text-ink-soft">
-              Generate a high-quality "Signal-to-Noise" video featuring professional voiceover and dynamic moving visuals.
+              Generate a high-quality &quot;Signal-to-Noise&quot; video featuring professional voiceover and dynamic moving visuals.
             </p>
             <button
               onClick={onTriggerSignal}

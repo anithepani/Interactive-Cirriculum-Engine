@@ -213,7 +213,7 @@ export default function SignupPage() {
               onClick={resendCode}
               className="w-full py-2 text-sm text-indigo-600 hover:text-indigo-800 transition"
             >
-              Didn't receive the code? Resend
+              Didn&apos;t receive the code? Resend
             </button>
           </div>
         )}

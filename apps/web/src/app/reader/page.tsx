@@ -30,7 +30,7 @@ function ReaderContent() {
           <div className="flex flex-col items-center rounded-3xl bg-white p-12 text-center shadow-sm border border-ink/5">
             <ShieldAlert className="mb-4 h-12 w-12 text-rose-500" />
             <h1 className="mb-2 font-display text-2xl font-bold text-ink">No URL Provided</h1>
-            <p className="mb-8 text-ink-soft">We couldn't find a valid link to read.</p>
+            <p className="mb-8 text-ink-soft">We couldn&apos;t find a valid link to read.</p>
             <button
               onClick={() => router.back()}
               className="flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-3 font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
