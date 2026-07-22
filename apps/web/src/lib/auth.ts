@@ -85,7 +85,12 @@ export async function authFetch(
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  if (!headers.has("Content-Type") && options.body) {
+  // Only default to JSON when we have a non-FormData body. For FormData, the
+  // browser must set its own multipart/form-data Content-Type (including the
+  // boundary), so we never override it here.
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!headers.has("Content-Type") && options.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 

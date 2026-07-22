@@ -1116,6 +1116,7 @@ async def get_curriculum(
             "signal_video_url": curriculum.signal_video_url,
             "ready_at": curriculum.ready_at.isoformat() if curriculum.ready_at else None,
             "video_url": curriculum.source_ref,
+            "source_type": curriculum.source_type,
             "duration": curriculum.duration,
             "segments": [
                 {
@@ -1158,6 +1159,71 @@ async def get_curriculum(
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{curriculum_id}/video", response_model=Dict[str, Any])
+async def get_upload_video_url(
+    curriculum_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return a presigned MinIO URL for a locally-uploaded source video.
+
+    Only applies to ``source_type=="upload"`` rows (YouTube rows are streamed
+    directly by the react-youtube player and never hit this endpoint). The URL
+    is generated against ``MINIO_EXTERNAL_ENDPOINT`` so the browser can reach
+    MinIO from outside the docker network (same robust external-client pattern
+    used by the recap task).
+    """
+    from ice_shared import settings as _settings
+
+    try:
+        set_tenant_context(str(current_user.tenant_id))
+
+        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        result = await session.execute(stmt)
+        curriculum = result.scalar_one_or_none()
+        if not curriculum:
+            raise HTTPException(status_code=404, detail="Curriculum not found")
+
+        if curriculum.source_type != "upload":
+            raise HTTPException(
+                status_code=400,
+                detail="Video URL only available for uploaded curricula",
+            )
+
+        s3_key = curriculum.source_ref
+        if not s3_key:
+            raise HTTPException(status_code=404, detail="No source video available")
+
+        # Robust external-client pattern (mirrors recap.py:378-401): sign the
+        # URL against the browser-reachable external endpoint so playback works
+        # from outside the docker network.
+        external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", "http://localhost:9000")
+
+        import boto3
+        from botocore.config import Config
+
+        external_s3 = boto3.client(
+            "s3",
+            endpoint_url=external_endpoint,
+            aws_access_key_id=_settings.settings.s3.access_key,
+            aws_secret_access_key=_settings.settings.s3.secret_key,
+            config=Config(signature_version="s3v4"),
+            region_name="us-east-1",
+        )
+        url = external_s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": _settings.settings.s3.bucket, "Key": s3_key},
+            ExpiresIn=7 * 24 * 3600,
+        )
+
+        return {"video_url": url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error generating video URL: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/{curriculum_id}/signal")
 async def start_signal_video(

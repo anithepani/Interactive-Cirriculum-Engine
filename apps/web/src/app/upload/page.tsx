@@ -207,7 +207,6 @@ export default function UploadPage() {
   const [progress, setProgress] = useState(0);
   const [success, setSuccess] = useState(false);
   const [duplicate, setDuplicate] = useState<DuplicateInfo | null>(null);
-  const [comingSoon, setComingSoon] = useState(false);
   const router = useRouter();
 
   /* ── Form submit ──────────────────────────────────────────────────────── */
@@ -217,15 +216,6 @@ export default function UploadPage() {
     setDuplicate(null);
     setSuccess(false);
 
-    // Local file upload path is deferred (binary → MinIO → worker not built
-    // yet). The drag-and-drop zone validates the file client-side, but on
-    // submit we surface a friendly "coming soon" notice instead of silently
-    // sending only JSON. YouTube URLs proceed through the real flow below.
-    if (draggedFile && !videoUrl) {
-      setComingSoon(true);
-      return;
-    }
-
     setLoading(true);
     setProgress(10);
 
@@ -234,13 +224,28 @@ export default function UploadPage() {
         setProgress((p) => Math.min(p + 8, 85));
       }, 400);
 
-      const res = await authFetch("/api/v1/curricula", {
-        method: "POST",
-        body: JSON.stringify({
-          video_url: videoUrl,
-          title: draggedFile?.name ?? "Uploaded curriculum",
-        }),
-      });
+      // Local file upload path: multipart/form-data → /curricula/upload. The
+      // authFetch helper leaves FormData bodies alone (no forced JSON header)
+      // so the browser sets the multipart boundary itself. YouTube URLs keep
+      // using the JSON /curricula endpoint below.
+      let res: Response;
+      if (draggedFile && !videoUrl) {
+        const form = new FormData();
+        form.append("file", draggedFile);
+        form.append("title", draggedFile.name);
+        res = await authFetch("/api/v1/curricula/upload", {
+          method: "POST",
+          body: form,
+        });
+      } else {
+        res = await authFetch("/api/v1/curricula", {
+          method: "POST",
+          body: JSON.stringify({
+            video_url: videoUrl,
+            title: draggedFile?.name ?? "Uploaded curriculum",
+          }),
+        });
+      }
 
       clearInterval(tick);
 
@@ -342,36 +347,6 @@ export default function UploadPage() {
           )}
         </AnimatePresence>
 
-        {/* Local-upload "coming soon" notice (binary path deferred) */}
-        <AnimatePresence>
-          {comingSoon && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              role="status"
-              className="mb-6 flex items-start gap-3 rounded-2xl border border-amber-200
-                         bg-amber-50 px-4 py-3 text-amber-800 shadow-sm"
-            >
-              <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-              <p className="flex-1 text-sm">
-                Local file uploads are coming soon. Your file looks valid, but
-                processing uploaded videos isn&apos;t available yet — paste a
-                YouTube URL to generate a curriculum now.
-              </p>
-              <button
-                type="button"
-                onClick={() => setComingSoon(false)}
-                aria-label="Dismiss notice"
-                className="text-amber-400 transition hover:text-amber-600"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         {/* ── Success panel ────────────────────────────────────────────── */}
         <AnimatePresence mode="wait">
           {success ? (
@@ -422,12 +397,10 @@ export default function UploadPage() {
                 onFileSelect={(file) => {
                   setDraggedFile(file);
                   setVideoUrl("");
-                  setComingSoon(false);
                 }}
                 selectedFile={draggedFile}
                 onClear={() => {
                   setDraggedFile(null);
-                  setComingSoon(false);
                 }}
                 disabled={loading}
               />
@@ -459,7 +432,6 @@ export default function UploadPage() {
                     setVideoUrl(e.target.value);
                     if (e.target.value) {
                       setDraggedFile(null);
-                      setComingSoon(false);
                     }
                   }}
                   placeholder="https://www.youtube.com/watch?v=…"
@@ -509,11 +481,6 @@ export default function UploadPage() {
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     Generating curriculum…
-                  </>
-                ) : draggedFile && !videoUrl ? (
-                  <>
-                    <Info className="h-4 w-4" />
-                    Local upload — coming soon
                   </>
                 ) : (
                   <>
