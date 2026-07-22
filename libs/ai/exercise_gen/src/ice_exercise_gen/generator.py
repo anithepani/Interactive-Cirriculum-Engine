@@ -104,6 +104,7 @@ def generate_exercises(
     segments: list[dict],
     concepts: list[dict],
     instructor_code: list[str] | str | None = None,
+    segment_texts: dict[Any, str] | list[str] | None = None,
 ) -> list[dict]:
     """Generate one exercise per checkpoint.
 
@@ -117,6 +118,13 @@ def generate_exercises(
         instructor_code: Optional code extracted from the instructor's screen
             (M3 OCR).  Passed as a list of strings (joined) or a single string.
             Used by coding/debug prompts to force a *different* context.
+        segment_texts: Optional real transcript text per segment (Phase 4
+            grounding hardening). Either a mapping ``{segment_id: text}`` or a
+            list aligned to ``segments`` by index. When provided, the actual
+            spoken transcript for a checkpoint's segment is injected into the
+            prompt so exercises are grounded in what was really said (not just
+            the LLM summary). Safe fallback: when absent/empty the generator
+            falls back to the segment summary exactly as before.
 
     Returns:
         A list of exercise dicts, each validated against ``ice_contracts.Exercise``.
@@ -124,6 +132,7 @@ def generate_exercises(
     client = get_client()
     concepts_list = _normalise_concepts(concepts)
     code_str = _join_instructor_code(instructor_code)
+    text_map = _normalise_segment_texts(segment_texts, segments)
 
     exercises: list[dict] = []
     for cp in checkpoints:
@@ -135,7 +144,11 @@ def generate_exercises(
             logger.warning("Skipping checkpoint %s: unknown exercise_type %r", cp.get("id"), etype)
             continue
 
-        prompt = _build_prompt(etype, cp, seg, conc, code_str)
+        # Phase 4: resolve the real transcript text for this checkpoint's
+        # segment (falls back to the summary inside _build_prompt when empty).
+        seg_transcript = _lookup_segment_text(cp, seg, text_map)
+
+        prompt = _build_prompt(etype, cp, seg, conc, code_str, seg_transcript)
         ex_dict = _generate_one(client, prompt, cp, etype, code_str)
         if ex_dict is not None:
             exercises.append(ex_dict)
@@ -194,6 +207,46 @@ def _join_instructor_code(instructor_code: list[str] | str | None) -> str:
     return str(instructor_code)
 
 
+def _normalise_segment_texts(
+    segment_texts: dict[Any, str] | list[str] | None, segments: list[dict]
+) -> dict[str, str]:
+    """Normalise the per-segment transcript text into a ``{segment_id: text}`` map.
+
+    Accepts either a mapping keyed by segment id, or a list aligned to
+    ``segments`` by index (in which case we key it by each segment's ``id``).
+    Returns an empty dict when nothing is supplied so callers fall back to the
+    summary (backward compatible).
+    """
+    if not segment_texts:
+        return {}
+    if isinstance(segment_texts, dict):
+        return {str(k): str(v) for k, v in segment_texts.items() if v}
+    # List aligned to ``segments`` by index.
+    text_map: dict[str, str] = {}
+    for idx, txt in enumerate(segment_texts):
+        if idx < len(segments):
+            sid = str(segments[idx].get("id", idx))
+            if txt:
+                text_map[sid] = str(txt)
+    return text_map
+
+
+def _lookup_segment_text(cp: dict, seg: dict, text_map: dict[str, str]) -> str:
+    """Return the real transcript text for a checkpoint's segment, or "".
+
+    Tries the checkpoint's ``segment_id`` first, then the resolved segment's
+    own ``id`` (they should match, but this is defensive against slug/int
+    mismatches). Empty string when no grounded text is available.
+    """
+    for key in (cp.get("segment_id"), seg.get("id")):
+        if key is None:
+            continue
+        txt = text_map.get(str(key))
+        if txt and str(txt).strip():
+            return str(txt)
+    return ""
+
+
 # --------------------------------------------------------------------------- #
 # Prompt building
 # --------------------------------------------------------------------------- #
@@ -229,20 +282,32 @@ def _render(template: str, variables: dict[str, Any]) -> str:
     return rendered
 
 
-def _build_prompt(etype: str, cp: dict, seg: dict, conc: dict, code_str: str) -> str:
+def _build_prompt(
+    etype: str,
+    cp: dict,
+    seg: dict,
+    conc: dict,
+    code_str: str,
+    segment_transcript_text: str = "",
+) -> str:
     template = _load_template(etype)
     difficulty = cp.get("difficulty", conc.get("difficulty", 3))
 
     # ``segment_text`` is the grounding excerpt injected into the prompt so the
-    # LLM bases the question on the actual video content. Segments do not store
-    # raw transcript text, so we fall back to the summary (the closest grounded
-    # field) when a dedicated ``text``/``transcript`` field is absent.
+    # LLM bases the question on the actual video content. Phase 4: prefer the
+    # REAL transcript text for this segment (what was actually said) when it is
+    # available; only fall back to summary/other fields when it is not, so we
+    # never regress older callers that don't pass transcript text.
     segment_text = (
-        seg.get("text")
+        (segment_transcript_text or "").strip()
+        or seg.get("text")
         or seg.get("transcript")
         or seg.get("summary")
         or "(No excerpt available for this segment.)"
     )
+
+    is_tech = etype in ("coding", "debug")
+    has_code = bool((code_str or "").strip())
 
     variables = {
         "concept": conc.get("label", cp.get("concept_id", "unknown")),
@@ -251,6 +316,7 @@ def _build_prompt(etype: str, cp: dict, seg: dict, conc: dict, code_str: str) ->
         "segment_summary": seg.get("summary", ""),
         "segment_title": seg.get("title", ""),
         "segment_text": segment_text,
+        "segment_transcript": segment_text,
         "instructor_code": code_str or "(No instructor code was extracted for this segment.)",
     }
 
@@ -259,6 +325,34 @@ def _build_prompt(etype: str, cp: dict, seg: dict, conc: dict, code_str: str) ->
     few_shot = _load_few_shot(etype)
     if few_shot:
         prompt += "\n\n## Example output\n```json\n" + few_shot + "\n```"
+
+    # Phase 4 grounding hardening: force the model to stay strictly within the
+    # provided transcript + OCR code and forbid inventing facts, APIs, or code
+    # that do not appear in the lesson material. Injected for every type.
+    grounding = (
+        "\n\n## Grounding rules (STRICT)\n"
+        "- Base the exercise ONLY on the TRANSCRIPT and (when present) the "
+        "INSTRUCTOR CODE below. These are the ground truth for this segment.\n"
+        "- Do NOT invent facts, functions, APIs, libraries, values, or code "
+        "that are not present in or directly implied by the transcript/OCR "
+        "code. Do not hallucinate.\n"
+        "- If a detail is not supported by the provided material, omit it "
+        "rather than guessing.\n"
+        "### TRANSCRIPT (actual spoken content for this segment)\n"
+        f"{segment_text}\n"
+    )
+    if is_tech and has_code:
+        # Technical types (coding/debug): attach the instructor's on-screen
+        # code (M3 OCR) as explicit grounding so the exercise is anchored to
+        # the real lesson code, not a plausible invention.
+        grounding += (
+            "### INSTRUCTOR CODE (on-screen OCR — ground the code in THIS)\n"
+            "```\n" + code_str.strip() + "\n```\n"
+            "- For this coding/debug task, the code you produce MUST be "
+            "consistent with the instructor code above (same language, style, "
+            "and problem domain).\n"
+        )
+    prompt += grounding
 
     prompt += "\n\nRespond with ONLY a JSON object. No markdown fences, no prose."
     return prompt
@@ -288,11 +382,13 @@ def _derive_context(etype: str, payload: dict, code_str: str) -> str | None:
 
     Issue 2: previously ``context`` was blindly set to the OCR-extracted
     ``code_str`` for EVERY exercise, so irrelevant IDE/terminal dumps appeared
-    under a "CODE SNIPPET" box — even for MCQ/conceptual questions or debug
-    exercises whose prompt already embeds the code. Rules now:
+    under a "CODE SNIPPET" box — even for MCQ/conceptual questions. Rules:
 
-    - debug: the buggy code is already shown in the editor -> no separate snippet.
-    - coding: the starter code is already in the editor -> no separate snippet.
+    - coding / debug (technical, Phase 4): attach the instructor's OCR code as
+      grounding context so the learner sees the real lesson code the exercise
+      is anchored to — UNLESS the same snippet is already reproduced in the
+      editor (starter/buggy_code) or the prompt, in which case a second copy
+      would only clutter the UI.
     - mcq / conceptual: only attach the OCR code when it is substantial and not
       already reproduced in the prompt (some questions quote the snippet inline).
     - never attach empty/whitespace-only or trivially short OCR fragments.
@@ -300,14 +396,23 @@ def _derive_context(etype: str, payload: dict, code_str: str) -> str | None:
     code = (code_str or "").strip()
     if not code or len(code) < 12:
         return None
-    if etype in ("debug", "coding"):
-        # The relevant code lives in buggy_code / starter (the editor); a second
-        # copy of unrelated OCR would only confuse the learner.
-        return None
+
     prompt = str(payload.get("prompt", "") or "")
     # If the prompt already contains the snippet, don't duplicate it.
-    if code and code[:40] in prompt:
+    if code[:40] in prompt:
         return None
+
+    if etype in ("debug", "coding"):
+        # Phase 4: technical types attach the OCR instructor code as grounding.
+        # Skip only when the editor content (starter/buggy_code) already
+        # contains this exact snippet, so we never show a redundant copy.
+        editor_code = str(
+            payload.get("starter", "") or payload.get("buggy_code", "") or ""
+        )
+        if code[:40] and code[:40] in editor_code:
+            return None
+        return code
+
     return code
 
 

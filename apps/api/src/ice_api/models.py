@@ -101,6 +101,11 @@ class Curriculum(Base):
     title = Column(String, nullable=False)
     status = Column(Enum(CurriculumStatus), default=CurriculumStatus.queued)
     language = Column(String, default="en")
+    # ── Phase 4: learner-selected difficulty (easy | medium | hard) ───────
+    # Additive nullable column with a "medium" default so existing curricula
+    # (pre-migration) transparently behave as medium. Threads through the
+    # pipeline to tune checkpoint spacing + exercise numeric difficulty.
+    difficulty = Column(String, nullable=True, server_default="medium", default="medium")
     framework_version = Column(String, nullable=True)
     duration = Column(Float, nullable=True)
     created_at = Column(DateTime, server_default=func.now())

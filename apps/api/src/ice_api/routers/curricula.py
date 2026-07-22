@@ -396,9 +396,21 @@ async def _record_checkpoint_attempt(
 router = APIRouter(prefix="/api/v1/curricula", tags=["curricula"])
 
 
+_VALID_DIFFICULTIES = ("easy", "medium", "hard")
+
+
+def _normalise_difficulty(value: Optional[str]) -> str:
+    """Clamp an arbitrary difficulty string to easy|medium|hard (default medium)."""
+    v = (value or "").strip().lower()
+    return v if v in _VALID_DIFFICULTIES else "medium"
+
+
 class CurriculumCreate(BaseModel):
     video_url: str
     title: Optional[str] = None
+    # Phase 4: learner-selected difficulty (easy | medium | hard). Defaults to
+    # "medium" so older clients that don't send it behave unchanged.
+    difficulty: Optional[str] = "medium"
 
 
 class EvaluateRequest(BaseModel):
@@ -667,6 +679,7 @@ async def create_curriculum(
             title=data.title or "Untitled",
             source_ref=data.video_url,
             source_type="youtube" if video_id else "upload",
+            difficulty=_normalise_difficulty(data.difficulty),
         )
         session.add(curriculum)
         await session.commit()
@@ -689,6 +702,7 @@ async def create_curriculum(
 async def upload_curriculum(
     file: UploadFile = File(...),
     title: Optional[str] = Form(None),
+    difficulty: Optional[str] = Form("medium"),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -735,6 +749,7 @@ async def upload_curriculum(
             source_type="upload",
             source_ref=None,  # set below once the S3 key is known
             status=CurriculumStatus.queued,
+            difficulty=_normalise_difficulty(difficulty),
         )
         session.add(curriculum)
         await session.commit()

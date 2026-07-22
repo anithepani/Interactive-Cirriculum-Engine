@@ -76,10 +76,75 @@ def _is_upload_ref(video_ref: str) -> bool:
     return video_ref.startswith("tenants/") and "/curricula/" in video_ref
 
 
+async def _get_curriculum_difficulty(curriculum_id: str) -> str:
+    """Read the learner-selected difficulty off the curriculum row.
+
+    Returns the stored value ("easy" | "medium" | "hard") or "medium" when the
+    row/column is missing (legacy DBs / pre-migration curricula). Never raises —
+    difficulty is a tuning knob and must not break generation.
+    """
+    try:
+        from ice_api.models import Curriculum
+        from ice_shared.db import get_session_factory
+
+        factory = get_session_factory()
+        async with factory() as session:
+            c = await session.get(Curriculum, int(curriculum_id))
+            value = str(getattr(c, "difficulty", None) or "medium").strip().lower()
+            return value if value in ("easy", "medium", "hard") else "medium"
+    except Exception:
+        logger.warning(
+            "could not read difficulty for curriculum %s; defaulting to medium",
+            curriculum_id,
+        )
+        return "medium"
+
+
+def _build_segment_texts(transcript: dict, segments: list[dict]) -> dict[str, str]:
+    """Build a ``{segment_id: transcript_text}`` map for exercise grounding.
+
+    M4 segment dicts carry only ``summary`` (no raw text), so we reconstruct
+    each segment's real transcript by concatenating the transcript's raw
+    segments whose midpoint falls within the M4 segment's [start, end] window.
+    This gives the exercise generator the actual spoken content to ground on.
+    Best-effort: returns ``{}`` on any problem so M7 falls back to summaries.
+    """
+    try:
+        raw = transcript.get("segments") or []
+        if not raw:
+            return {}
+        text_map: dict[str, str] = {}
+        for seg in segments:
+            sid = str(seg.get("id", ""))
+            start = float(seg.get("start", 0.0))
+            end = float(seg.get("end", 0.0))
+            parts: list[str] = []
+            for r in raw:
+                r_start = float(r.get("start", 0.0))
+                r_end = float(r.get("end", r_start))
+                mid = (r_start + r_end) / 2.0
+                if start <= mid <= end:
+                    txt = (r.get("text") or "").strip()
+                    if txt:
+                        parts.append(txt)
+            if parts:
+                text_map[sid] = " ".join(parts)
+        return text_map
+    except Exception:
+        logger.warning("could not build per-segment transcript texts; using summaries")
+        return {}
+
+
 async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     set_tenant_context(tenant_id)
     await _ensure_tables()
     await persist.set_curriculum_status(curriculum_id, tenant_id, "processing")
+
+    # Phase 4: read the learner-selected difficulty off the curriculum row so
+    # it can tune checkpoint spacing (M6) + exercise numeric difficulty (M7).
+    # Best-effort with a "medium" fallback so a missing column / legacy row
+    # never breaks the pipeline (zero-regression).
+    difficulty = await _get_curriculum_difficulty(curriculum_id)
 
     # ---- M1: ingest ----
     # Two supported sources, routed by the shape of ``video_ref``:
@@ -220,6 +285,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         min_gap_sec=settings.pipeline.checkpoint_min_gap_sec,
         min_start_sec=settings.pipeline.checkpoint_min_start_sec,
         avoid_final_sec=settings.pipeline.checkpoint_avoid_final_sec,
+        difficulty=difficulty,
     )
     cp_map = await persist.persist_checkpoints(
         curriculum_id, tenant_id, checkpoints, seg_map, concept_map
@@ -245,8 +311,15 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         if vtype_val == "code" and text and str(text).strip():
             instructor_code.append(str(text))
 
+    # Phase 4 grounding: reconstruct each segment's real transcript text from
+    # the raw transcript so M7 grounds exercises on what was actually said (not
+    # just the LLM summary). Empty map falls back to summaries (zero-regression).
+    segment_texts = _build_segment_texts(transcript, segments)
+
     exercises = generate_exercises(
-        checkpoints, segments, graph, instructor_code=instructor_code
+        checkpoints, segments, graph,
+        instructor_code=instructor_code,
+        segment_texts=segment_texts,
     )
     ex_map = await persist.persist_exercises(tenant_id, exercises, cp_map)
 

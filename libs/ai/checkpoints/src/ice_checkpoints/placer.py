@@ -30,6 +30,24 @@ _AVOID_FINAL_SEC = _DEFAULT_AVOID_FINAL_SEC  # backwards-compat alias
 _DEFAULT_DIFFICULTY = 3
 _FALLBACK_CONCEPT_ID = "general"
 
+# Phase 4: learner-selected difficulty → pipeline tuning. Easy spreads
+# checkpoints further apart with gentler exercises; Hard tightens the spacing
+# and raises exercise difficulty. Unknown/None values fall back to "medium".
+_DIFFICULTY_MIN_GAP_SEC = {"easy": 150.0, "medium": 90.0, "hard": 60.0}
+_DIFFICULTY_NUMERIC = {"easy": 2, "medium": 3, "hard": 4}
+
+
+def _difficulty_params(difficulty: str | None) -> tuple[float, int]:
+    """Map a difficulty string to (min_gap_sec, numeric_difficulty).
+
+    Defaults to the "medium" tuning for unknown/None inputs so callers that
+    omit difficulty (and pre-migration curricula) behave exactly as before.
+    """
+    key = (difficulty or "medium").strip().lower()
+    if key not in _DIFFICULTY_MIN_GAP_SEC:
+        key = "medium"
+    return _DIFFICULTY_MIN_GAP_SEC[key], _DIFFICULTY_NUMERIC[key]
+
 # Keywords that strongly indicate a programming/technical segment. Used to
 # decide whether ``coding``/``debug`` exercise types are appropriate. Kept
 # deliberately biased toward unambiguous programming terms to avoid flagging
@@ -177,6 +195,7 @@ def place_checkpoints(
     min_gap_sec: float = 90.0,
     min_start_sec: float = 60.0,
     avoid_final_sec: float = _DEFAULT_AVOID_FINAL_SEC,
+    difficulty: str | None = None,
 ) -> list[dict]:
     """Place checkpoints at segment *ends* subject to placement rules.
 
@@ -192,7 +211,8 @@ def place_checkpoints(
             each having ``id``) and ``edges``.
         min_gap_sec: Minimum seconds between consecutive checkpoints.
             Defaults to 90 (production); pass a smaller value for short
-            demo videos.
+            demo videos. When ``difficulty`` is supplied it overrides this
+            with the difficulty-mapped gap (easy=150, medium=90, hard=60).
         min_start_sec: Minimum seconds before the first checkpoint may
             appear. Checkpoints with ``ts < min_start_sec`` are skipped so
             learners ingest content before being tested. Defaults to 60
@@ -204,6 +224,11 @@ def place_checkpoints(
             duration) which is always eligible. Non-final checkpoints are
             never clamped backward (clamping would re-trigger the
             pre-content timing bug for short trailing segments).
+        difficulty: Optional learner-selected difficulty ("easy" | "medium" |
+            "hard", Phase 4). When provided it tunes checkpoint density
+            (``min_gap_sec``) and the numeric ``difficulty`` stamped on each
+            checkpoint (easy=2, medium=3, hard=4). ``None``/unknown falls back
+            to medium so existing callers are unaffected.
 
     Returns:
         A list of checkpoint dicts, each with keys: ``id`` (str, e.g.
@@ -213,6 +238,15 @@ def place_checkpoints(
     """
     if not segments:
         return []
+
+    # Phase 4: derive difficulty-tuned params. When ``difficulty`` is given it
+    # overrides ``min_gap_sec`` and sets the per-checkpoint numeric difficulty;
+    # when omitted we keep the caller-supplied ``min_gap_sec`` and the legacy
+    # default numeric difficulty (zero-regression).
+    if difficulty is not None:
+        min_gap_sec, numeric_difficulty = _difficulty_params(difficulty)
+    else:
+        numeric_difficulty = _DEFAULT_DIFFICULTY
 
     # Index concept nodes by id for technicality lookups.
     graph_concept_ids: set[str] = set()
@@ -279,7 +313,7 @@ def place_checkpoints(
                 "segment_id": seg_id,
                 "concept_id": concept_id,
                 "exercise_type": exercise_type,
-                "difficulty": _DEFAULT_DIFFICULTY,
+                "difficulty": numeric_difficulty,
             }
         )
         last_ts = ts
