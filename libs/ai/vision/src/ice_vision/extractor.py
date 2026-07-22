@@ -182,14 +182,63 @@ _IDE_METADATA_MARKERS = (
     "console", "output", "explorer", "project", "navigate", "refactor",
     "problems", "version control", "search everywhere", "process finished",
     "exit code", ".idea", "__pycache__", "site-packages", "external libraries",
+    # Issue 3: Jupyter / REPL / notebook chrome and library-tour prose seen in
+    # the reported garbage (In[12], Out[5], "Library number four", CSV names).
+    "in[", "out[", "in [", "out [", "library number", "winequality",
+    ".csv", "traceback", "stdin", "stdout", "stderr", "kernel",
 )
 
 # Signals that a line is genuinely a line of code (not prose / a menu label).
 _CODE_TOKEN_KEYWORDS = {
     "def", "class", "import", "return", "from", "public", "void",
     "for", "while", "if", "elif", "else", "print", "lambda", "yield",
-    "async", "await", "try", "except", "with",
+    "async", "await", "try", "except", "with", "function", "const", "let",
 }
+
+# STRONG structural keywords: their presence is high-confidence evidence that a
+# frame really contains source code (not a stray "if"/"for" in prose or a menu).
+# NOTE: "from" is deliberately excluded — as an English preposition it fires on
+# ordinary narration ("udd from the website") and produced false CODE frames.
+_STRONG_CODE_KEYWORDS = {
+    "def", "class", "import", "function", "public", "void", "const",
+}
+
+# OCR-corruption / non-code artifacts. Real source code (Python/JS/Java) never
+# contains CJK characters or "smart" full-width punctuation; when OCR emits
+# these it has mangled prose or UI text, not code (Issue 3 garbage examples:
+# "htal.)", "（）", "林 finding", "consote.wor").
+_OCR_NOISE_CHARS = "（）“”‘’＝，；：《》【】、。—…"
+
+
+def _has_cjk(s: str) -> bool:
+    return any(
+        "\u3000" <= ch <= "\u9fff" or "\uac00" <= ch <= "\ud7a3" for ch in s
+    )
+
+
+def _looks_like_ocr_garbage(line: str) -> bool:
+    """True when a line carries OCR-corruption artifacts that no real code has."""
+    if _has_cjk(line):
+        return True
+    if any(ch in line for ch in _OCR_NOISE_CHARS):
+        return True
+    return False
+
+
+def _looks_like_prose(line: str) -> bool:
+    """True when a line reads as an English sentence, not a line of code.
+
+    Long runs of alphabetic words with no code punctuation (``=(){}[].:``) are
+    prose the OCR captured from slides/narration (e.g. "Guido wanted to create a
+    language that was easy to read and write.").
+    """
+    s = line.strip()
+    if not s:
+        return False
+    if any(c in s for c in "={}[]()<>;"):
+        return False
+    words = [w for w in s.split() if w.isalpha()]
+    return len(words) >= 5
 
 
 def _looks_like_code_line(line: str) -> bool:
@@ -197,13 +246,17 @@ def _looks_like_code_line(line: str) -> bool:
     s = line.strip()
     if not s:
         return False
+    # Issue 3: reject OCR-corrupted and prose lines outright — these were the
+    # dominant source of the garbage "CODE SNIPPET" content.
+    if _looks_like_ocr_garbage(s) or _looks_like_prose(s):
+        return False
     words = set(s.lower().replace("(", " ").replace(":", " ").split())
     if words & _CODE_TOKEN_KEYWORDS:
         return True
     # Structural signals: indented assignment/call, block-open, call syntax.
     if line[:1] in (" ", "\t") and any(c in s for c in "=(:"):
         return True
-    if s.endswith(":"):
+    if s.endswith(":") and any(c in s for c in "()="):
         return True
     if "()" in s or ("(" in s and ")" in s and "=" in s):
         return True
@@ -221,19 +274,27 @@ def _metadata_ratio(text: str) -> float:
     return hits / len(lines)
 
 
+def _has_strong_code_keyword(text: str) -> bool:
+    """True when the text contains at least one high-confidence code keyword."""
+    tokens = set(text.lower().replace("(", " ").replace(":", " ").split())
+    return bool(tokens & _STRONG_CODE_KEYWORDS)
+
+
 def _classify_region(text: str, img_shape: tuple[int, ...]) -> VisualRegionType:
     text_lower = text.lower()
 
     # An editor/terminal screenshot is dominated by IDE chrome — treat it as a
-    # SLIDE so its noisy OCR never becomes an exercise code snippet (Issue 2).
-    if _metadata_ratio(text) >= 0.4:
+    # SLIDE so its noisy OCR never becomes an exercise code snippet (Issue 2/3).
+    # Threshold lowered to 0.3 so lightly-chromed editor frames still fail out.
+    if _metadata_ratio(text) >= 0.3:
         return VisualRegionType.SLIDE
 
-    # Require MULTIPLE code-shaped lines before calling a frame CODE. A single
-    # stray keyword (e.g. "import" in a menu label) is not enough — that
-    # false-positive pulled whole IDE frames in as "code".
+    # Require MULTIPLE code-shaped lines AND at least one strong structural
+    # keyword (def/class/import/function/...) before calling a frame CODE. A few
+    # stray "if"/"for"/"print" tokens (common in prose or menus) are NOT enough;
+    # that false-positive pulled whole IDE/notebook frames in as "code" (Issue 3).
     code_lines = sum(1 for ln in text.splitlines() if _looks_like_code_line(ln))
-    if code_lines >= 2:
+    if code_lines >= 3 and _has_strong_code_keyword(text):
         return VisualRegionType.CODE
 
     if "architecture" in text_lower or "flow" in text_lower or "diagram" in text_lower:
@@ -245,22 +306,29 @@ def _classify_region(text: str, img_shape: tuple[int, ...]) -> VisualRegionType:
 def _sanitize_code(text: str) -> str:
     """Keep only code-shaped lines, dropping interleaved IDE/terminal chrome.
 
-    OCR of an editor frame mixes real code with menu labels, the file tree, and
-    terminal output. We drop lines that read as IDE metadata or don't look like
-    code; if stripping leaves nothing useful we fall back to the original text
-    so a genuine snippet is never lost.
+    OCR of an editor frame mixes real code with menu labels, the file tree,
+    terminal output, prose narration, and mangled characters. We drop lines that
+    read as IDE metadata, OCR garbage, or prose, keeping only the contiguous
+    code. Unlike before, if nothing survives we return an EMPTY string (Issue 3)
+    so a garbage frame yields no snippet at all rather than falling back to the
+    raw noisy text.
     """
     kept: list[str] = []
     for ln in text.splitlines():
         low = ln.lower()
         if any(m in low for m in _IDE_METADATA_MARKERS):
             continue
-        # Keep code-shaped lines, plus continuation lines once code has started.
-        if _looks_like_code_line(ln) or (ln.strip() and kept):
+        if _looks_like_ocr_garbage(ln) or _looks_like_prose(ln):
+            continue
+        # Keep code-shaped lines, plus indented continuation lines once code has
+        # started (but never blank-only prose that slipped through).
+        if _looks_like_code_line(ln) or (ln.strip() and kept and ln[:1] in (" ", "\t")):
             kept.append(ln)
     cleaned = "\n".join(kept).strip()
-    if not cleaned:
-        return text.strip()
+    # Issue 3: require at least two surviving code lines to consider it a real
+    # snippet; otherwise return empty so no garbage snippet is surfaced.
+    if len([ln for ln in kept if ln.strip()]) < 2:
+        return ""
     # Best-effort parse (validation only; we keep the cleaned text regardless).
     try:
         parser = _get_ts_parser()
@@ -353,7 +421,14 @@ def _ocr_single_frame(args: tuple) -> dict | None:
         region_type = _classify_region(full_text, frame.shape)
         
         if region_type == VisualRegionType.CODE:
-            full_text = _sanitize_code(full_text)
+            sanitized = _sanitize_code(full_text)
+            if sanitized:
+                full_text = sanitized
+            else:
+                # Sanitization stripped everything as noise/prose (Issue 3):
+                # this was not real code, so demote to SLIDE rather than emit an
+                # empty CODE region that would surface as a garbage snippet.
+                region_type = VisualRegionType.SLIDE
             
         # Normalize bbox
         bbox = [
