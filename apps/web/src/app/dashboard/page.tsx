@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useState, useEffect } from "react";
@@ -8,14 +8,14 @@ import { Plus, Video, RefreshCw, AlertTriangle, Trash2, X, ChevronRight, BookOpe
 import LoadingSpinner from "@/components/LoadingSpinner";
 import CurriculumCard from "@/components/CurriculumCard";
 import AppLayout from "@/components/layout/AppLayout";
-import RecommendationGrid from "@/components/RecommendationGrid";
+
 import { DashboardAreaChart, DashboardDonutChart, MiniCalendar } from "@/components/dashboard/Charts";
 import { authFetcher, authFetch, getCurrentUser, type AuthUser } from "@/lib/auth";
 import { staggerContainer } from "@/lib/motion";
 import type { CurriculumSummary, StatsOverview } from "@/lib/types";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
-/* ── Polling ──────────────────────────────────────────────────────────── */
+/* â”€â”€ Polling â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 const POLL_INTERVAL = 5_000;
 
 const refreshInterval = (latest?: CurriculumSummary[]) => {
@@ -26,7 +26,7 @@ const refreshInterval = (latest?: CurriculumSummary[]) => {
   return pending ? POLL_INTERVAL : 0;
 };
 
-/* ── Delete confirmation modal ─────────────────────────────────────────── */
+/* â”€â”€ Delete confirmation modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function DeleteModal({
   title,
   onConfirm,
@@ -96,7 +96,7 @@ function DeleteModal({
   );
 }
 
-/* ── Hero Banner ───────────────────────────────────────────────────────── */
+/* â”€â”€ Hero Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function HeroBanner({ user }: { user: AuthUser | null }) {
   return (
     <motion.div
@@ -135,19 +135,20 @@ function HeroBanner({ user }: { user: AuthUser | null }) {
   );
 }
 
-/* ── Statistics Row ────────────────────────────────────────────────────── */
-function StatsRow({ data }: { data: CurriculumSummary[] | undefined }) {
+/* â”€â”€ Statistics Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+function StatsRow({ data, stats }: { data: CurriculumSummary[] | undefined, stats: StatsOverview | undefined }) {
   // Live metrics from the backend (Block D). Falls back to the curricula count
   // for the first card while the stats request is in flight so the row never
   // renders empty.
-  const { data: stats } = useSWR<StatsOverview>("/api/v1/stats/overview", authFetcher);
 
   const curricula = stats?.total_curricula ?? data?.length ?? 0;
   const exercises = stats?.completed_exercises ?? 0;
   const hours = stats?.hours_learned ?? 0;
+  const correct = stats?.correct_exercises ?? 0;
+  const accuracy = exercises > 0 ? Math.round((correct / exercises) * 100) : 0;
 
   return (
-    <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <div className="flex items-center gap-4 rounded-3xl border border-ink/5 bg-white p-5 shadow-sm">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
           <BookOpen className="h-5 w-5" />
@@ -177,29 +178,39 @@ function StatsRow({ data }: { data: CurriculumSummary[] | undefined }) {
           <p className="font-display text-xl font-bold text-ink">{hours}</p>
         </div>
       </div>
+      
+      <div className="flex items-center gap-4 rounded-3xl border border-ink/5 bg-white p-5 shadow-sm">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+          <Flame className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs font-medium text-ink-soft uppercase tracking-wider">Accuracy Rate</p>
+          <p className="font-display text-xl font-bold text-ink">{accuracy}%</p>
+        </div>
+      </div>
     </div>
   );
 }
 
-/* ── Empty & Error States ──────────────────────────────────────────────── */
+/* â”€â”€ Empty & Error States â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 function EmptyState() {
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="flex flex-col items-center justify-center gap-6 rounded-[2rem] border border-ink/10 bg-white py-20 px-8 text-center shadow-sm"
+      className="flex flex-col items-center justify-center gap-6 rounded-[2rem] border border-ink/10 bg-white py-16 px-8 text-center shadow-sm"
     >
       <motion.div
         animate={{ y: [0, -8, 0] }}
         transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-        className="flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"
+        className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"
       >
-        <Video className="h-10 w-10" />
+        <Video className="h-8 w-8" />
       </motion.div>
       <div className="max-w-xs space-y-2">
-        <p className="font-display text-xl font-bold text-ink">No curricula yet</p>
+        <p className="font-display text-lg font-bold text-ink">No curricula yet</p>
         <p className="text-sm leading-relaxed text-ink-soft">
-          Upload your first video to get started — paste a YouTube URL or drop a local file.
+          Upload your first video to get started.
         </p>
       </div>
     </motion.div>
@@ -228,8 +239,14 @@ function LoadingSkeleton() {
   );
 }
 
-/* ── Right Sidebar Stats Placeholder ───────────────────────────────────── */
-function RightSidebarStats({ user, data }: { user: AuthUser | null, data?: CurriculumSummary[] }) {
+/* â”€â”€ Right Sidebar Stats Placeholder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+function RightSidebarStats({ user, data, stats }: { user: AuthUser | null, data?: CurriculumSummary[], stats?: StatsOverview }) {
+  // Goal: 5 hours of learning per week
+  const goalHours = 5;
+  const hoursLearned = stats?.total_duration_watched ? stats.total_duration_watched / 3600 : 0;
+  const progressPercent = Math.min((hoursLearned / goalHours) * 100, 100);
+  const strokeDashoffset = 289 - (289 * progressPercent) / 100;
+
   return (
     <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
       <div className="flex items-center justify-between">
@@ -243,10 +260,10 @@ function RightSidebarStats({ user, data }: { user: AuthUser | null, data?: Curri
       </div>
 
       <div className="mt-8 flex flex-col items-center">
-        <div className="relative flex h-32 w-32 items-center justify-center rounded-full border-[6px] border-indigo-100">
-          {/* Faux progress ring */}
-          <svg className="absolute inset-0 h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="46" fill="transparent" stroke="currentColor" strokeWidth="8" className="text-indigo-600" strokeDasharray="289" strokeDashoffset="180" strokeLinecap="round" />
+        <div className="relative flex h-32 w-32 items-center justify-center rounded-full border-[6px] border-indigo-50">
+          {/* Dynamic progress ring */}
+          <svg className="absolute inset-0 h-full w-full -rotate-90 transform drop-shadow-md" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="46" fill="transparent" stroke="currentColor" strokeWidth="8" className="text-indigo-500 transition-all duration-1000 ease-out" strokeDasharray="289" strokeDashoffset={strokeDashoffset} strokeLinecap="round" />
           </svg>
           <Avatar className="h-20 w-20">
             <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'ICE'}`} />
@@ -289,7 +306,7 @@ function RightSidebarStats({ user, data }: { user: AuthUser | null, data?: Curri
   );
 }
 
-/* ── Page ──────────────────────────────────────────────────────────────── */
+/* â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 export default function DashboardPage() {
   const [user, setUser] = useState<AuthUser | null>(null);
 
@@ -307,47 +324,112 @@ export default function DashboardPage() {
     useSWR<CurriculumSummary[]>("/api/v1/curricula", authFetcher, {
       refreshInterval,
     });
+    
+  const { data: stats } = useSWR<StatsOverview>("/api/v1/stats/overview", authFetcher);
 
-  // Delete flow state
-  const [pendingDelete, setPendingDelete] = useState<CurriculumSummary | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  // Undo Delete Flow
+  const [undoToast, setUndoToast] = useState<{ id: number; title: string; timeoutId: NodeJS.Timeout } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const handleDeleteConfirm = async () => {
-    if (!pendingDelete) return;
-    setDeleting(true);
-    setDeleteError(null);
-    try {
-      const res = await authFetch(`/api/v1/curricula/${pendingDelete.id}`, { method: "DELETE" });
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || `Server error ${res.status}`);
+  const handleDeleteClick = (curriculum: CurriculumSummary) => {
+    // Optimistic UI removal
+    mutate((prev) => prev?.filter((c) => c.id !== curriculum.id), { revalidate: false });
+    
+    if (undoToast) clearTimeout(undoToast.timeoutId);
+    
+    const timeoutId = setTimeout(async () => {
+      setUndoToast(null);
+      try {
+        const res = await authFetch(`/api/v1/curricula/${curriculum.id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Delete failed");
+      } catch (err) {
+        mutate(); // Revert on failure
+        setDeleteError("Failed to delete " + curriculum.title);
       }
-      await mutate((prev) => prev?.filter((c) => c.id !== pendingDelete.id), { revalidate: false });
-      setPendingDelete(null);
-    } catch (err) {
-      setDeleteError((err as Error).message || "Failed to delete curriculum.");
-    } finally {
-      setDeleting(false);
-    }
+    }, 5000);
+    
+    setUndoToast({ id: curriculum.id, title: curriculum.title, timeoutId });
+  };
+
+  const handleUndo = () => {
+    if (!undoToast) return;
+    clearTimeout(undoToast.timeoutId);
+    setUndoToast(null);
+    mutate(); // Revert optimistic removal
   };
 
   return (
     <AppLayout>
-      <div className="grid grid-cols-1 gap-8 xl:grid-cols-3">
-        {/* Main Content Column (Banner + Curricula) */}
+      <div className="mx-auto max-w-7xl grid grid-cols-1 gap-8 xl:grid-cols-3">
+        {/* Main Content Column */}
         <div className="flex flex-col gap-8 xl:col-span-2">
           
           <HeroBanner user={user} />
           
-          <RecommendationGrid />
+          <StatsRow data={data} stats={stats} />
           
-          <StatsRow data={data} />
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+            <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+              <h2 className="mb-6 font-display text-xl font-bold text-ink">Learning Analytics</h2>
+              <DashboardAreaChart data={data || []} />
+            </div>
+            
+            <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+              <h2 className="mb-6 font-display text-xl font-bold text-ink">Topic Retention</h2>
+              <DashboardDonutChart data={data || []} />
+            </div>
+          </div>
 
-          {/* Project Analytics Chart */}
-          <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
-            <h2 className="mb-6 font-display text-xl font-bold text-ink">Learning Analytics</h2>
-            <DashboardAreaChart data={data || []} />
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+            <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+              <h2 className="mb-6 font-display text-xl font-bold text-ink">Category Focus</h2>
+              <div className="flex h-48 flex-col justify-end gap-3">
+                {(() => {
+                  let cats = stats?.categories || [];
+                  if (cats.length === 0 && data && data.length > 0) {
+                     // Fallback computation
+                     const counts: Record<string, number> = {};
+                     data.forEach(item => {
+                        const t = item.title.toLowerCase();
+                        let name = "General";
+                        if (t.includes("react") || t.includes("python") || t.includes("code")) name = "Programming";
+                        else if (t.includes("ai") || t.includes("data")) name = "Data & AI";
+                        else if (t.includes("design") || t.includes("ui")) name = "Design";
+                        counts[name] = (counts[name] || 0) + 1;
+                     });
+                     cats = Object.entries(counts).map(([category, count]) => ({ category, count, percent: 0 }));
+                  }
+
+                  if (cats.length === 0) {
+                     return <div className="flex h-full items-center justify-center text-sm text-ink-soft">No category data yet</div>;
+                  }
+
+                  return cats.slice(0, 4).map((cat, i) => {
+                    const max = Math.max(...cats.map(c => c.count));
+                    const width = Math.max((cat.count / max) * 100, 5);
+                    const colors = ["bg-indigo-500", "bg-rose-500", "bg-emerald-500", "bg-amber-500"];
+                    return (
+                      <div key={cat.category} className="flex items-center gap-4 text-sm">
+                        <div className="w-24 shrink-0 truncate font-semibold text-ink-soft">{cat.category}</div>
+                        <div className="flex-1">
+                          <motion.div 
+                            initial={{ width: 0 }}
+                            animate={{ width: `${width}%` }}
+                            transition={{ duration: 1, delay: i * 0.1 }}
+                            className={`h-4 rounded-full ${colors[i % colors.length]}`} 
+                          />
+                        </div>
+                        <div className="w-8 text-right font-bold text-ink">{cat.count}</div>
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+            
+            <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
+              <MiniCalendar data={data || []} />
+            </div>
           </div>
 
           {/* Continue Watching Section */}
@@ -381,46 +463,105 @@ export default function DashboardPage() {
             ) : !data || data.length === 0 ? (
               <EmptyState />
             ) : (
-              <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                {data.map((curriculum, index) => (
-                  <CurriculumCard
-                    key={curriculum.id}
-                    curriculum={curriculum}
-                    index={index}
-                    onDelete={(id) => {
-                      const target = data.find((c) => c.id === id) ?? null;
-                      setPendingDelete(target);
-                    }}
-                  />
-                ))}
+              <motion.div variants={staggerContainer} initial="hidden" animate="visible" className="overflow-hidden rounded-[2rem] border border-ink/5 bg-white shadow-sm">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="border-b border-ink/5 bg-ink/5 text-xs font-semibold uppercase tracking-wider text-ink-soft">
+                      <tr>
+                        <th className="px-6 py-4">Curriculum Title</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">Created Date</th>
+                        <th className="px-6 py-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-ink/5">
+                      {data.map((curriculum, index) => {
+                        const isReady = curriculum.status === "ready";
+                        const isFailed = curriculum.status === "failed";
+                        return (
+                          <motion.tr 
+                            key={curriculum.id}
+                            custom={index}
+                            variants={{ hidden: { opacity: 0, y: 10 }, visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.05 } }) }}
+                            className="group transition-colors hover:bg-ink/5"
+                          >
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 group-hover:bg-indigo-100 group-hover:text-indigo-700 transition">
+                                  <Video className="h-5 w-5" />
+                                </div>
+                                <span className="font-semibold text-ink line-clamp-1">{curriculum.title}</span>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                isReady ? 'bg-emerald-50 text-emerald-600' :
+                                isFailed ? 'bg-rose-50 text-rose-600' :
+                                'bg-amber-50 text-amber-600'
+                              }`}>
+                                {isReady && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />}
+                                {isFailed && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />}
+                                {!isReady && !isFailed && <RefreshCw className="h-3 w-3 animate-spin" />}
+                                {curriculum.status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-ink-soft">
+                              {curriculum.created_at ? new Date(curriculum.created_at).toLocaleDateString() : 'N/A'}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Link
+                                  href={`/curriculum/${curriculum.id}`}
+                                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                                    isReady
+                                      ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                                      : "bg-ink/5 text-ink-soft hover:bg-ink/10"
+                                  }`}
+                                >
+                                  {isReady ? "View" : "Details"}
+                                </Link>
+                                <button
+                                  onClick={() => handleDeleteClick(curriculum)}
+                                  className="rounded-lg p-1.5 text-ink-soft transition hover:bg-rose-50 hover:text-rose-600"
+                                  title="Delete Curriculum"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </motion.tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </motion.div>
             )}
           </div>
         </div>
 
-        {/* Right Sidebar Column (Stats & Mentors) */}
-        <div className="flex flex-col gap-8 xl:col-span-1">
-          <RightSidebarStats user={user} data={data} />
-
-          <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
-            <h2 className="mb-6 font-display text-xl font-bold text-ink">Project Progress</h2>
-            <DashboardDonutChart data={data || []} />
-          </div>
-
-          <div className="rounded-[2.5rem] border border-ink/5 bg-white p-8 shadow-sm">
-            <MiniCalendar data={data || []} />
-          </div>
+        {/* Right Sidebar Column */}
+        <div className="flex flex-col gap-8 xl:col-span-1 sticky top-28 self-start z-10">
+          <RightSidebarStats user={user} data={data} stats={stats} />
         </div>
       </div>
 
       <AnimatePresence>
-        {pendingDelete && (
-          <DeleteModal
-            title={pendingDelete.title}
-            onConfirm={handleDeleteConfirm}
-            onCancel={() => { if (!deleting) { setPendingDelete(null); setDeleteError(null); } }}
-            deleting={deleting}
-          />
+        {undoToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.9 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 rounded-full bg-ink px-6 py-3 text-white shadow-2xl"
+          >
+            <span className="text-sm font-medium">Deleted &quot;{undoToast.title}&quot;</span>
+            <button
+              onClick={handleUndo}
+              className="text-sm font-bold text-indigo-400 hover:text-indigo-300 transition"
+            >
+              Undo
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
     </AppLayout>

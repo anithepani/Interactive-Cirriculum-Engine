@@ -169,12 +169,28 @@ export function DashboardDonutChart({ data = [] }: { data: CurriculumSummary[] }
   const radius = 40;
   const circumference = 2 * Math.PI * radius;
   const completedDash = (stats.completed / stats.total) * circumference;
+  const failedDash = (stats.failed / stats.total) * circumference;
   
   return (
     <div className="flex flex-col items-center">
       <div className="relative flex h-40 w-40 items-center justify-center">
         <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r={radius} fill="transparent" stroke="currentColor" strokeWidth="12" className="text-ink/5" />
+          
+          {stats.failed > 0 && (
+            <motion.circle
+              cx="50" cy="50" r={radius}
+              fill="transparent"
+              stroke="currentColor"
+              strokeWidth="12"
+              className="text-rose-500"
+              strokeDasharray={circumference}
+              initial={{ strokeDashoffset: circumference }}
+              animate={{ strokeDashoffset: circumference - failedDash }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+            />
+          )}
+
           <motion.circle
             cx="50" cy="50" r={radius}
             fill="transparent"
@@ -186,6 +202,7 @@ export function DashboardDonutChart({ data = [] }: { data: CurriculumSummary[] }
             initial={{ strokeDashoffset: circumference }}
             animate={{ strokeDashoffset: circumference - completedDash }}
             transition={{ duration: 1.5, ease: "easeOut" }}
+            style={{ transformOrigin: '50px 50px', transform: `rotate(${(stats.failed / stats.total) * 360}deg)` }}
           />
         </svg>
         <div className="absolute flex flex-col items-center justify-center">
