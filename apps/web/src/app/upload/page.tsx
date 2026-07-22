@@ -23,6 +23,8 @@ import {
   Sparkles,
   Loader2,
   Info,
+  PlayCircle,
+  TrendingUp,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import UploadZone from "@/components/UploadZone";
@@ -254,6 +256,12 @@ function DifficultySelector({
   );
 }
 
+const TRENDING_VIDEOS = [
+  { title: "React in 100 Seconds", author: "Fireship", duration: "1:45", url: "https://youtube.com/watch?v=Tn6-PIqc4UM", bg: "from-cyan-400 to-blue-500" },
+  { title: "Python for Beginners", author: "Programming with Mosh", duration: "1:00:00", url: "https://youtube.com/watch?v=_uQrJ0TkZlc", bg: "from-yellow-400 to-orange-500" },
+  { title: "Next.js App Router", author: "Vercel", duration: "45:00", url: "https://youtube.com/watch?v=ZBRKVBOSNKc", bg: "from-zinc-800 to-black" },
+  { title: "What is Machine Learning?", author: "CodeBullet", duration: "12:30", url: "https://youtube.com/watch?v=f_uwKZIAeM0", bg: "from-fuchsia-500 to-purple-600" }
+];
 /* ── Page ─────────────────────────────────────────────────────────────────── */
 /** Details of a detected duplicate curriculum (surfaced via a friendly modal). */
 interface DuplicateInfo {
@@ -590,6 +598,45 @@ export default function UploadPage() {
           ]}
         />
       </motion.div>
+
+      {/* ── Trending Videos Carousel ────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.35, ease: "easeOut" as const }}
+        className="mt-12 mb-8"
+      >
+        <div className="flex items-center gap-2 mb-6">
+          <TrendingUp className="h-5 w-5 text-indigo-500" />
+          <h2 className="font-display text-xl font-bold text-ink">Trending & Recommended</h2>
+        </div>
+        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x">
+          {TRENDING_VIDEOS.map((video, idx) => (
+            <button
+              key={idx}
+              onClick={() => {
+                setVideoUrl(video.url);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="group relative flex shrink-0 snap-start flex-col gap-3 rounded-[1.5rem] p-3 transition hover:bg-white hover:shadow-sm sm:w-[280px]"
+            >
+              <div className={`flex h-36 w-full items-center justify-center rounded-2xl bg-gradient-to-br ${video.bg} shadow-inner transition-transform group-hover:scale-[1.02]`}>
+                <PlayCircle className="h-12 w-12 text-white/80 transition group-hover:scale-110 group-hover:text-white" />
+                <div className="absolute bottom-5 right-5 rounded-md bg-black/60 px-2 py-1 text-xs font-medium text-white backdrop-blur-sm">
+                  {video.duration}
+                </div>
+              </div>
+              <div className="text-left px-1">
+                <h3 className="line-clamp-1 font-display font-semibold text-ink transition group-hover:text-indigo-600">
+                  {video.title}
+                </h3>
+                <p className="text-sm text-ink-soft">{video.author}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </motion.div>
+
       </div>
 
       {/* ── Duplicate-video modal (409 from the backend) ─────────────────── */}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect, useRef, useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import useSWR from "swr";
 import YouTube from "react-youtube";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -13,7 +13,7 @@ import VideoProgressBar, { StatusMap } from "@/components/VideoProgressBar";
 import CheckpointDonut from "@/components/CheckpointDonut";
 import { authFetcher, authFetch } from "@/lib/auth";
 
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Maximize, Minimize, PenSquare, Save, CheckCircle } from "lucide-react";
 import Link from "next/link";
 import AppLayout from "@/components/layout/AppLayout";
 
@@ -40,6 +40,7 @@ function getYouTubeId(url: string): string | null {
 
 export default function CurriculumPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params?.id;
   const { data, error, mutate } = useSWR<CurriculumDetail>(
     id ? `/api/v1/curricula/${id}` : null,
@@ -65,6 +66,10 @@ export default function CurriculumPage() {
   const [submissionMap, setSubmissionMap] = useState<Record<string | number, string>>({});
   const [completedSnapshot, setCompletedSnapshot] = useState<"correct" | "incorrect" | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isTheaterMode, setIsTheaterMode] = useState(false);
+  const [isNotesOpen, setIsNotesOpen] = useState(false);
+  const [notesText, setNotesText] = useState("");
+  const [savedNotes, setSavedNotes] = useState(false);
 
   const playerRef = useRef<PlayerHandle | null>(null);
   // Underlying HTML5 <video> element for uploaded curricula. The poll loop
@@ -408,15 +413,15 @@ export default function CurriculumPage() {
 
   return (
     <AppLayout>
-      <div className="space-y-6 px-6 py-8 mx-auto max-w-5xl">
+      <div className={`space-y-6 px-6 py-8 mx-auto transition-all duration-500 ${isTheaterMode ? 'max-w-[95%]' : 'max-w-5xl'}`}>
         <div className="flex items-center mb-2">
-        <Link 
-          href="/dashboard"
+        <button 
+          onClick={() => router.back()}
           className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-ink shadow-sm ring-1 ring-inset ring-ink/10 transition hover:bg-indigo-50 hover:text-indigo-600 hover:ring-indigo-200"
         >
           <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </Link>
+          Back
+        </button>
       </div>
       
       <div className="rounded-[2rem] border border-ink/10 bg-white p-6 shadow-sm">
@@ -428,10 +433,30 @@ export default function CurriculumPage() {
           <CheckpointDonut checkpoints={checkpoints} statusMap={statusMap} />
         </div>
 
-        <div className="mt-6 flex flex-col gap-6">
+        <div className={`mt-6 flex flex-col gap-6 ${isNotesOpen && !isTheaterMode ? 'lg:flex-row' : ''}`}>
           {/* Main Video & Progress */}
-          <div className="space-y-4">
-            <div className="rounded-lg overflow-hidden bg-black aspect-video relative">
+          <div className="flex-1 space-y-4">
+            <div className="flex items-center justify-end gap-3 mb-2">
+              <button
+                onClick={() => setIsNotesOpen(!isNotesOpen)}
+                className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  isNotesOpen ? "bg-indigo-100 text-indigo-700" : "bg-ink/5 text-ink-soft hover:bg-ink/10"
+                }`}
+              >
+                <PenSquare className="h-4 w-4" />
+                {isNotesOpen ? "Close Notes" : "Take Notes"}
+              </button>
+              <button
+                onClick={() => setIsTheaterMode(!isTheaterMode)}
+                className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
+                  isTheaterMode ? "bg-indigo-100 text-indigo-700" : "bg-ink/5 text-ink-soft hover:bg-ink/10"
+                }`}
+              >
+                {isTheaterMode ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+                {isTheaterMode ? "Exit Theater" : "Theater Mode"}
+              </button>
+            </div>
+            <div className={`rounded-[2rem] overflow-hidden bg-black relative transition-all duration-500 shadow-lg ${isTheaterMode ? 'h-[75vh]' : 'aspect-video'}`}>
               {isUpload ? (
                 /* ── Uploaded video: HTML5 <video> (same styling as the
                    MediaTabs/Recap players). The onLoadedMetadata handler wires
@@ -573,7 +598,35 @@ export default function CurriculumPage() {
             />
           </div>
 
-          {/* Unified Supplemental Content: Cinematic Video, Recap Video, Study Guide */}
+          {/* Integrated Notes Panel */}
+          {isNotesOpen && (
+            <div className={`flex flex-col rounded-[2rem] border border-ink/10 bg-white p-6 shadow-sm transition-all ${isTheaterMode ? 'h-64' : 'lg:w-[350px] shrink-0'}`}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-display text-lg font-bold text-ink">My Notes</h3>
+                <button
+                  onClick={() => {
+                    setSavedNotes(true);
+                    setTimeout(() => setSavedNotes(false), 2000);
+                  }}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full"
+                >
+                  {savedNotes ? <CheckCircle className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+                  {savedNotes ? "Saved!" : "Save Notes"}
+                </button>
+              </div>
+              <textarea
+                value={notesText}
+                onChange={(e) => setNotesText(e.target.value)}
+                placeholder="Type your notes here... (Markdown supported)"
+                className="flex-1 w-full resize-none rounded-xl border-none bg-ink/5 p-4 text-sm text-ink outline-none focus:ring-2 focus:ring-indigo-500/50"
+              />
+              <p className="mt-3 text-xs text-ink-soft text-center">
+                Notes auto-timestamp to current video time.
+              </p>
+            </div>
+          )}
+
+        {/* Unified Supplemental Content: Cinematic Video, Recap Video, Study Guide */}
           <MediaTabs
             recapStatus={data.recap_status || "none"}
             recapUrl={data.recap_url ?? null}

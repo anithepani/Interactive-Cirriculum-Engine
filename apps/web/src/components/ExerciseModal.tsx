@@ -2,7 +2,30 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import dynamic from "next/dynamic";
+import { motion } from "framer-motion";
 import { ExercisePayload } from "@/lib/types";
+
+function CelebrationBurst({ active }: { active: boolean }) {
+  if (!active) return null;
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden z-50 flex items-center justify-center">
+      {Array.from({ length: 30 }).map((_, i) => (
+        <motion.div
+          key={i}
+          initial={{ opacity: 1, scale: 0, x: 0, y: 0 }}
+          animate={{
+            opacity: 0,
+            scale: [0, 1.5, 0],
+            x: (Math.random() - 0.5) * 400,
+            y: (Math.random() - 0.5) * 400,
+          }}
+          transition={{ duration: 1.5, ease: "easeOut", delay: Math.random() * 0.2 }}
+          className={`absolute w-3 h-3 rounded-full ${['bg-indigo-500', 'bg-fuchsia-500', 'bg-emerald-500', 'bg-amber-500'][i % 4]}`}
+        />
+      ))}
+    </div>
+  );
+}
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((mod) => mod.default),
@@ -573,6 +596,7 @@ export default function ExerciseModal({
           )}
         </div>
       </div>
+      <CelebrationBurst active={submitted && result?.passed === true && !alreadyAnswered} />
     </div>
   );
 }
