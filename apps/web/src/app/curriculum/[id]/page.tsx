@@ -206,6 +206,8 @@ export default function CurriculumPage() {
       cancelled = true;
     };
   }, [id, data?.source_type]);
+
+  useEffect(() => {
     setPlayerReady(false);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setLoadingTimeout(true), 15000);
