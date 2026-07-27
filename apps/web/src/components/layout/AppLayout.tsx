@@ -230,8 +230,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     <button
                       onClick={() => {
                         setProfileOpen(false);
-                        removeTokens();
-                        window.location.href = "/auth/login";
+                        window.location.href = "/logout";
                       }}
                       className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-ink-soft transition hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 w-full text-left"
                     >
