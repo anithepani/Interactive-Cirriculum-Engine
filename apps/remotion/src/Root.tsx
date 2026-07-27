@@ -12,6 +12,8 @@ export type SlideData = {
 
 export type MainCompProps = {
   slides: SlideData[];
+  width?: number;
+  height?: number;
 };
 
 export const Root: React.FC = () => {
@@ -25,10 +27,15 @@ export const Root: React.FC = () => {
       }
     ]
   };
-  
+
   const inputProps = getInputProps() as MainCompProps;
   const props = inputProps.slides ? inputProps : defaultProps;
-  
+
+  // Resolution is settings-driven: the worker passes width/height via --props
+  // (default 1280x720 — half the pixel work of 1080p, ample for a summary).
+  const width = props.width ?? 1280;
+  const height = props.height ?? 720;
+
   const totalDuration = props.slides.reduce((acc, s) => acc + s.durationInFrames, 0);
   const durationInFrames = totalDuration > 0 ? totalDuration : 30;
 
@@ -39,8 +46,8 @@ export const Root: React.FC = () => {
         component={MainComp}
         durationInFrames={durationInFrames}
         fps={30}
-        width={1920}
-        height={1080}
+        width={width}
+        height={height}
         defaultProps={props}
       />
     </>

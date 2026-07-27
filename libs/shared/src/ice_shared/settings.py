@@ -138,6 +138,35 @@ class _Pipeline(BaseSettings):
     upload_allowed_exts: str = ".mp4,.mov,.mkv,.webm,.avi,.m4v"
 
 
+class _SignalVideo(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="SIGNAL_VIDEO_")
+    # Master toggle. When False the curriculum build skips dispatching this
+    # task entirely and marks signal_status="skipped" — the feature is a
+    # nice-to-have and must never block a curriculum from going live on a
+    # CPU-only free tier.
+    enabled: bool = True
+    # Render engine: "remotion" (animated, needs Node on PATH) or "ffmpeg"
+    # (static slideshow, faster, no Node). Defaults to remotion for parity
+    # with existing behaviour; switch to ffmpeg on constrained hosts.
+    engine: str = "remotion"
+    # Cap Gemini's selected sentences so generation stays fast + cheap.
+    max_slides: int = 6
+    # Truncate the transcript sent to Gemini to this many chars. 12k is ample
+    # signal for a summary; sending 50k made generation slower + costlier.
+    transcript_chars: int = 12000
+    # Render resolution (width,height). 1280x720 (was 1920x1080) halves the
+    # pixel work for both Remotion and ffmpeg paths.
+    width: int = 1280
+    height: int = 720
+    # TTS binary name to pre-flight (must be on PATH). When absent the task
+    # fails fast with a clear log instead of spawning and swallowing errors.
+    tts_command: str = "edge-tts"
+    # TTS voice.
+    tts_voice: str = "en-US-ChristopherNeural"
+    # npx binary name to pre-flight for the remotion engine.
+    remotion_command: str = "npx"
+
+
 class Settings(BaseSettings):
     """Root settings; import as `from ice_shared import settings`."""
 
@@ -206,6 +235,7 @@ class Settings(BaseSettings):
     ocr: _OCR = Field(default_factory=_OCR)
     vision: _Vision = Field(default_factory=_Vision)
     pipeline: _Pipeline = Field(default_factory=_Pipeline)
+    signal_video: _SignalVideo = Field(default_factory=_SignalVideo)
 
     @property
     def database_url_resolved(self) -> str:

@@ -23,6 +23,7 @@ from typing import Any
 from ice_shared import settings
 from ice_shared.db import Base, get_engine, reset_engine, set_tenant_context
 from ice_shared.s3 import get_s3_client
+from sqlalchemy import text
 
 from ice_worker import persist
 from ice_worker.celery_app import celery_app
@@ -45,6 +46,7 @@ async def _ensure_tables() -> None:
 
     engine = get_engine()
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         await conn.run_sync(Base.metadata.create_all)
 
 
@@ -423,8 +425,10 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     # Once the curriculum is ready, kick off the signal video automatically so
     # the learner doesn't have to press the button. Idempotent: if a signal is
     # already queued/processing/ready (e.g. the manual button was pressed first)
-    # skip. A failure here must never fail the curriculum generation, so it's
-    # fully isolated.
+    # skip. Honors the SIGNAL_VIDEO_ENABLED toggle: when the feature is off
+    # (CPU-only free tier) we mark it skipped and never dispatch, so a disabled
+    # nice-to-have can't consume worker capacity. A failure here must never
+    # fail the curriculum generation, so it's fully isolated.
     try:
         from ice_api.models import Curriculum
         from ice_shared.db import get_session_factory
@@ -433,10 +437,13 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         factory = get_session_factory()
         async with factory() as session:
             c = await session.get(Curriculum, int(curriculum_id))
-            if c and c.signal_status not in ("queued", "processing", "ready"):
-                c.signal_status = "queued"
+            if c and c.signal_status not in ("queued", "processing", "ready", "skipped"):
+                if settings.signal_video.enabled:
+                    c.signal_status = "queued"
+                    should_dispatch = True
+                else:
+                    c.signal_status = "skipped"
                 await session.commit()
-                should_dispatch = True
         if should_dispatch:
             celery_app.send_task(
                 "ice.worker.generate_signal_video",
