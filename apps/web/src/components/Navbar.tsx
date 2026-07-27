@@ -46,10 +46,8 @@ export default function Navbar() {
   }, []);
 
   const handleLogout = () => {
-    removeTokens();
-    setUser(null);
-    setAuthed(false);
-    router.push("/login");
+    // The logout page clears tokens and handles the animation
+    router.push("/logout");
   };
 
   const initials = user?.name
@@ -61,7 +59,8 @@ export default function Navbar() {
         .toUpperCase()
     : "ICE";
 
-  if (isAppRoute) return null;
+  const isAuthRoute = pathname === "/login" || pathname === "/signup";
+  if (isAppRoute || isAuthRoute) return null;
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-black/5 bg-white/60 backdrop-blur-lg">
