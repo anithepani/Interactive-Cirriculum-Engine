@@ -5,6 +5,8 @@ import { useRef } from "react";
 import { EXERCISE_TYPES, VALUE_PROPOSITION_COPY } from "@/lib/data";
 import { fadeUp, viewportOnce } from "@/lib/motion";
 
+import Image from "next/image";
+
 export default function ValuePropositionFan() {
   const ref = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll({
@@ -46,11 +48,25 @@ export default function ValuePropositionFan() {
                 rotate: transforms[i].rotate,
                 y: transforms[i].y,
                 zIndex: i,
+                transformStyle: "preserve-3d"
               }}
-              className={`absolute left-1/2 top-1/2 flex h-64 w-52 -translate-x-1/2 -translate-y-1/2 flex-col justify-between rounded-xl2 p-6 text-white shadow-xl ${exercise.bgClass}`}
+              whileHover={{ 
+                scale: 1.05, 
+                rotateX: 10, 
+                rotateY: -10, 
+                zIndex: 50,
+                boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.5)"
+              }}
+              className={`absolute left-1/2 top-1/2 flex h-64 w-52 -translate-x-1/2 -translate-y-1/2 flex-col justify-between rounded-xl2 p-6 text-white shadow-xl transition-shadow overflow-hidden group`}
             >
-              <h3 className="font-display text-xl font-bold">{exercise.title}</h3>
-              <p className="text-sm text-white/85">{exercise.description}</p>
+              <div className="absolute inset-0 z-0">
+                <Image src={exercise.image} alt={exercise.title} fill className="object-cover group-hover:scale-110 transition-transform duration-700" />
+                <div className={`absolute inset-0 opacity-80 mix-blend-multiply ${exercise.bgClass}`} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
+              </div>
+              
+              <h3 className="font-display text-xl font-bold relative z-10 drop-shadow-md" style={{ transform: "translateZ(30px)" }}>{exercise.title}</h3>
+              <p className="text-sm text-white/90 font-medium relative z-10 drop-shadow-md" style={{ transform: "translateZ(20px)" }}>{exercise.description}</p>
             </motion.div>
           ))}
         </div>
