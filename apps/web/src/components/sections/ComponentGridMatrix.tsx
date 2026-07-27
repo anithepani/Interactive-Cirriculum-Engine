@@ -51,42 +51,6 @@ export default function ComponentGridMatrix() {
           ))}
         </div>
 
-        <motion.div
-          className="absolute left-1/2 top-1/2 w-80 max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-xl2 bg-white p-6 shadow-2xl"
-          whileHover={{ y: -4 }}
-        >
-          <div className="flex items-center gap-3">
-            <Avatar>
-              <AvatarFallback>TW</AvatarFallback>
-            </Avatar>
-            <div>
-              <p className="font-semibold">{COMPONENT_GRID_PROFILE.name}</p>
-              <p className="font-mono text-xs text-ink-soft">{COMPONENT_GRID_PROFILE.caption}</p>
-            </div>
-          </div>
-
-          <pre className="mt-4 overflow-x-auto rounded-md bg-ink p-3 font-mono text-xs text-lime">
-            {COMPONENT_GRID_PROFILE.codeSnippet}
-          </pre>
-
-          <div className="mt-4 flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setLiked((v) => !v)}
-              className="rounded-full p-2 hover:bg-ink/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-              aria-label={liked ? "Unlike" : "Like"}
-              aria-pressed={liked}
-            >
-              <Heart
-                className={`h-5 w-5 ${liked ? "fill-hotpink text-hotpink" : "text-ink"}`}
-              />
-            </button>
-            <Badge variant="lime" className="gap-1">
-              <BadgeCheck className="h-3 w-3" />
-              Verified
-            </Badge>
-          </div>
-        </motion.div>
       </motion.div>
     </section>
   );
