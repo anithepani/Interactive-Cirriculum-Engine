@@ -5,6 +5,7 @@ import { VISION_COPY, VISION_ICONS } from "@/lib/data";
 import { fadeUp, staggerContainer, viewportOnce } from "@/lib/motion";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import UrlConverterMachine from "@/components/sections/UrlConverterMachine";
 
 function PersonalMocks() {
   const items = [
@@ -65,21 +66,8 @@ export default function VisionSplitGrid() {
             {VISION_COPY.body}
           </motion.p>
 
-          <motion.div variants={fadeUp} custom={2} className="relative mt-10 h-48 w-full md:h-56">
-            {VISION_ICONS.map(({ Icon, label, rotate, x, y, delay }) => (
-              <div
-                key={label}
-                className="absolute flex h-16 w-16 animate-floatY items-center justify-center rounded-full border border-ink/20 bg-white"
-                style={{
-                  transform: `translate(${x}px, ${y}px) rotate(${rotate}deg)`,
-                  animationDelay: delay,
-                }}
-                title={label}
-              >
-                <Icon className="h-7 w-7 text-ink" aria-hidden="true" />
-                <span className="sr-only">{label}</span>
-              </div>
-            ))}
+          <motion.div variants={fadeUp} custom={2} className="relative mt-10 w-full">
+            <UrlConverterMachine />
           </motion.div>
         </motion.div>
 
