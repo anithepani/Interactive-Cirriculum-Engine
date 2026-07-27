@@ -60,9 +60,16 @@ export default function MarketplaceCarousel() {
             {CURRICULUM_ITEMS.map((item) => (
               <article
                 key={item.id}
-                className="w-[280px] shrink-0 snap-start rounded-xl2 border border-ink/10 bg-white p-5 shadow-card sm:w-[320px]"
+                className="group w-[280px] shrink-0 snap-start rounded-xl2 border border-ink/10 bg-white p-5 shadow-card sm:w-[320px] hover:shadow-xl transition-all cursor-pointer"
               >
-                <div className={`h-36 rounded-xl ${item.accent} opacity-80`} />
+                <div className="relative h-36 w-full rounded-xl overflow-hidden">
+                  <div className={`absolute inset-0 opacity-40 mix-blend-multiply ${item.accent} z-10 transition-opacity group-hover:opacity-20`} />
+                  <img 
+                    src={`https://images.unsplash.com/photo-${item.id === 1 ? '1555066931-4365d14bab8c' : item.id === 2 ? '1551288049-bebda4e38f71' : item.id === 3 ? '1633356122544-f134324a6cee' : '1526374965328-7f61d4dc18c5'}?auto=format&fit=crop&w=600&q=80`}
+                    alt={item.title}
+                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  />
+                </div>
                 <h3 className="mt-4 font-display text-lg font-bold">{item.title}</h3>
                 <p className="mt-1 font-mono text-xs text-ink-soft">{item.lessons} lessons</p>
                 <div className="mt-4 h-2 overflow-hidden rounded-full bg-ink/10">
