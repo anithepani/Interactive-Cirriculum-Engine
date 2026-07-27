@@ -76,13 +76,14 @@ async def get_current_user(
         # "sub" must be a string per JWT RFC 7519; python-jose enforces this on
         # decode. Cast back to int for the ORM lookup (User.id is Integer).
         user_id = int(user_id_raw)
+        token_version = payload.get("tv", 1)
     except (JWTError, ValueError, TypeError):
         raise credentials_exception
     
     stmt = select(User).where(User.id == user_id, User.is_active == True)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
-    if user is None:
+    if user is None or user.token_version != token_version:
         raise credentials_exception
     return user
 
