@@ -83,6 +83,7 @@ class User(Base):
     avatar_url = Column(String(255), nullable=True)
     streak_count = Column(Integer, default=0, server_default="0")
     streak_color = Column(String(50), default="emerald", server_default="'emerald'")
+    token_version = Column(Integer, default=1, server_default="1")
     created_at = Column(DateTime, server_default=func.now())
     last_login = Column(DateTime, nullable=True)
     __table_args__ = (
