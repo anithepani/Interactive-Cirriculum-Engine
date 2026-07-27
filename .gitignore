@@ -87,3 +87,5 @@ vision_pipeline/output/
 vision_pipeline/input/
 m3_visual_extraction/output/
 m3_visual_extraction/__pycache__/
+.vercel
+.env*
