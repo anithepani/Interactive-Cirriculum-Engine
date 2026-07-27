@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Play } from "lucide-react";
+import { Play, Youtube, BrainCircuit } from "lucide-react";
 import { FEATURE_CARDS } from "@/lib/data";
 import { fadeUp, staggerContainer, viewportOnce } from "@/lib/motion";
 import { Badge } from "@/components/ui/badge";
@@ -30,45 +30,84 @@ function FeatureCardContent({ card }: { card: (typeof FEATURE_CARDS)[0] }) {
   if (card.variant === "light") {
     return (
       <>
-        <div className="relative mb-4 flex gap-2">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-16 flex-1 rounded-lg bg-ink/5" />
-          ))}
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-ink text-white shadow-lg">
-              <Play className="h-5 w-5 fill-white" />
-            </div>
-          </div>
+        <div className="relative mb-6 h-56 w-full overflow-hidden rounded-xl bg-zinc-950 p-5 shadow-inner">
+           {/* Fake terminal header */}
+           <div className="flex gap-2 mb-4">
+              <div className="w-3 h-3 rounded-full bg-red-500/80" />
+              <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+              <div className="w-3 h-3 rounded-full bg-green-500/80" />
+           </div>
+           {/* Fake terminal code */}
+           <div className="font-mono text-xs sm:text-sm leading-loose">
+             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-blue-400 font-semibold">> ICE INGESTION_WORKER --url "youtube.com/..."</motion.p>
+             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 0.8 }} className="text-zinc-400 mt-2">[✓] Transcript fetched (12,400 tokens)</motion.p>
+             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 1.4 }} className="text-zinc-400">[✓] Concepts segmented (7 blocks)</motion.p>
+             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 2.0 }} className="text-lime mt-2">> Generating Checkpoints...</motion.p>
+             <motion.div 
+                className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden"
+                initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 2.0 }}
+             >
+                <motion.div className="h-full bg-lime" initial={{ width: "0%" }} whileInView={{ width: "100%" }} transition={{ delay: 2.0, duration: 2, ease: "linear", repeat: Infinity }} />
+             </motion.div>
+           </div>
         </div>
         {card.badge && (
-          <Badge className="absolute right-4 top-4 bg-blue text-white">{card.badge}</Badge>
+          <Badge className="absolute right-4 top-4 bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg border-none">{card.badge}</Badge>
         )}
       </>
     );
   }
   if (card.variant === "blue") {
     return (
-      <div className="relative h-32 overflow-hidden rounded-xl">
-        {[0, 1, 2].map((i) => (
-          <motion.div
-            key={i}
-            className="absolute rounded-full bg-white/20"
-            style={{ width: 80 + i * 40, height: 80 + i * 40, left: `${20 + i * 15}%`, top: `${10 + i * 10}%` }}
-            animate={{ rotate: 360 }}
-            transition={{ duration: 20 + i * 5, repeat: Infinity, ease: "linear" }}
-          />
-        ))}
+      <div className="relative h-48 mb-4 overflow-hidden rounded-xl border border-white/10 bg-blue/80 flex items-center justify-center">
+         {/* Network of logic mapping */}
+         <svg className="absolute inset-0 w-full h-full opacity-50" aria-hidden="true">
+            <motion.path d="M -50 80 Q 150 -20 350 80" stroke="rgba(255,255,255,0.4)" strokeWidth="2" fill="none" strokeDasharray="5 5" animate={{ strokeDashoffset: [0, -100] }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }} />
+            <motion.path d="M -50 80 Q 150 180 350 80" stroke="rgba(255,255,255,0.4)" strokeWidth="2" fill="none" strokeDasharray="5 5" animate={{ strokeDashoffset: [0, -100] }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }} />
+         </svg>
+         
+         <div className="flex items-center gap-4 sm:gap-8 relative z-10">
+            <motion.div whileHover={{ scale: 1.1, rotate: -10 }} className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-md shadow-lg border border-white/30 flex items-center justify-center">
+               <Youtube className="w-7 h-7 text-white" />
+            </motion.div>
+            <motion.div className="w-12 sm:w-16 h-1.5 rounded-full bg-gradient-to-r from-transparent via-white to-transparent" animate={{ opacity: [0.2, 1, 0.2] }} transition={{ duration: 2, repeat: Infinity }} />
+            <motion.div whileHover={{ scale: 1.1, rotate: 10 }} className="w-14 h-14 rounded-2xl bg-white shadow-xl flex items-center justify-center">
+               <BrainCircuit className="w-7 h-7 text-blue" />
+            </motion.div>
+         </div>
       </div>
     );
   }
   if (card.variant === "photo") {
     return (
-      <div className="relative h-32 rounded-xl bg-gradient-to-br from-hotpink/30 via-orange/30 to-lime/30">
-        {card.telemetry?.map((t, i) => (
-          <Badge key={t} variant="outline" className="absolute bg-white/90" style={{ top: 8 + i * 32, left: 8 }}>
-            {t}
-          </Badge>
-        ))}
+      <div className="relative h-48 mb-4 rounded-xl bg-zinc-950 p-4 border border-ink/10 shadow-inner flex flex-col font-mono text-xs sm:text-sm">
+         <div className="flex justify-between items-center mb-3 border-b border-white/10 pb-3">
+            <div className="flex gap-4">
+               <span className="text-zinc-500">main.py</span>
+               <span className="text-indigo-400 border-b border-indigo-400">test.py</span>
+            </div>
+            {card.telemetry && (
+               <div className="flex gap-2 hidden sm:flex">
+                 {card.telemetry.map((t) => (
+                   <Badge key={t} variant="secondary" className="bg-white/10 text-white/80 hover:bg-white/20">{t}</Badge>
+                 ))}
+               </div>
+            )}
+         </div>
+         <p className="text-purple-400">def <span className="text-blue-400">fibonacci</span>(n):</p>
+         <p className="pl-4 text-zinc-500"># Generated practice overlay</p>
+         <p className="pl-4 text-pink-400">if <span className="text-zinc-300">n &lt;= 1:</span></p>
+         <p className="pl-8 text-lime">return <span className="text-zinc-300">n</span></p>
+         <p className="pl-4 text-lime">return <span className="text-blue-400">fibonacci</span><span className="text-zinc-300">(n-1) + </span><span className="text-blue-400">fibonacci</span><span className="text-zinc-300">(n-2)</span></p>
+         
+         <motion.div 
+            className="absolute bottom-4 right-4 bg-lime/10 text-lime border border-lime/30 px-3 py-1.5 rounded-md shadow-[0_0_15px_rgba(198,255,61,0.1)] font-bold text-xs"
+            initial={{ opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5 }}
+         >
+            Tests Passed!
+         </motion.div>
       </div>
     );
   }
