@@ -165,11 +165,14 @@ async def google_callback(code: str, session: AsyncSession = Depends(get_session
 
         user_info = jose_jwt.get_unverified_claims(token_data["id_token"])
         email = user_info.get("email")
+        email_verified = user_info.get("email_verified", False)
         name = user_info.get("name", email.split("@")[0] if email else "User")
         google_id = user_info.get("sub")
 
         if not email:
             raise HTTPException(status_code=400, detail="Email not provided by Google")
+        if not email_verified:
+            raise HTTPException(status_code=403, detail="Unverified Google emails are not permitted")
 
         stmt = select(User).where(User.email == email)
         result = await session.execute(stmt)
@@ -192,8 +195,8 @@ async def google_callback(code: str, session: AsyncSession = Depends(get_session
             user.last_login = datetime.utcnow()
             await session.commit()
 
-        access_token = create_access_token({"sub": str(user.id)})
-        refresh_token = create_refresh_token({"sub": str(user.id)})
+        access_token = create_access_token({"sub": str(user.id), "tv": user.token_version})
+        refresh_token = create_refresh_token({"sub": str(user.id), "tv": user.token_version})
         return _token_redirect(access_token, refresh_token)
 
 
@@ -239,9 +242,12 @@ async def github_callback(code: str, session: AsyncSession = Depends(get_session
         emails = email_resp.json()
         primary_email = next((e for e in emails if e.get("primary")), None)
         email = primary_email.get("email") if primary_email else user_data.get("email")
+        is_verified = primary_email.get("verified") if primary_email else False
 
         if not email:
             raise HTTPException(status_code=400, detail="Email not found")
+        if not is_verified:
+            raise HTTPException(status_code=403, detail="Unverified GitHub emails are not permitted")
 
         name = user_data.get("name") or user_data.get("login") or email.split("@")[0]
         github_id = str(user_data.get("id"))
@@ -267,8 +273,8 @@ async def github_callback(code: str, session: AsyncSession = Depends(get_session
             user.last_login = datetime.utcnow()
             await session.commit()
 
-        access_token = create_access_token({"sub": str(user.id)})
-        refresh_token = create_refresh_token({"sub": str(user.id)})
+        access_token = create_access_token({"sub": str(user.id), "tv": user.token_version})
+        refresh_token = create_refresh_token({"sub": str(user.id), "tv": user.token_version})
         return _token_redirect(access_token, refresh_token)
 
 
@@ -325,8 +331,8 @@ async def verify_account(
     user.last_login = datetime.utcnow()
     await session.commit()
 
-    access_token = create_access_token({"sub": str(user.id)})
-    refresh_token = create_refresh_token({"sub": str(user.id)})
+    access_token = create_access_token({"sub": str(user.id), "tv": user.token_version})
+    refresh_token = create_refresh_token({"sub": str(user.id), "tv": user.token_version})
 
     return TokenResponse(
         access_token=access_token,
@@ -356,8 +362,8 @@ async def login(data: LoginRequest, session: AsyncSession = Depends(get_session)
     user.last_login = datetime.utcnow()
     await session.commit()
 
-    access_token = create_access_token({"sub": str(user.id)})
-    refresh_token = create_refresh_token({"sub": str(user.id)})
+    access_token = create_access_token({"sub": str(user.id), "tv": user.token_version})
+    refresh_token = create_refresh_token({"sub": str(user.id), "tv": user.token_version})
 
     return TokenResponse(
         access_token=access_token,
@@ -379,6 +385,18 @@ async def resend_code(email: str, session: AsyncSession = Depends(get_session)):
 
     if user.is_verified:
         raise HTTPException(status_code=400, detail="Email already verified")
+
+    # Invalidate previous codes
+    stmt_invalidate = select(VerificationCode).where(
+        and_(
+            VerificationCode.email == email,
+            VerificationCode.is_used == False
+        )
+    )
+    res_inv = await session.execute(stmt_invalidate)
+    for old_code in res_inv.scalars():
+        old_code.is_used = True
+    await session.commit()
 
     code = generate_verification_code()
     vc = VerificationCode(
@@ -411,6 +429,7 @@ async def refresh_token(
         if payload.get("type") != "refresh":
             raise HTTPException(status_code=401, detail="Invalid token type")
         user_id = payload.get("sub")
+        token_version = payload.get("tv", 1)
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
     except Exception:
@@ -419,10 +438,10 @@ async def refresh_token(
     stmt = select(User).where(User.id == int(user_id), User.is_active == True)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    if not user or user.token_version != token_version:
+        raise HTTPException(status_code=401, detail="User not found or session revoked")
 
-    access_token = create_access_token({"sub": str(user.id)})
+    access_token = create_access_token({"sub": str(user.id), "tv": user.token_version})
     return {"access_token": access_token}
 
 class UpdateMeRequest(BaseModel):
@@ -445,6 +464,7 @@ async def update_me(
             raise HTTPException(status_code=400, detail="Current password is incorrect")
             
         current_user.password_hash = hash_password(data.new_password)
+        current_user.token_version += 1
         
     current_user.name = sanitize_input(data.name)
     
