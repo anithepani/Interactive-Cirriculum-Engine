@@ -76,7 +76,7 @@ export default function DualCTABlocks() {
                 asChild
                 className={`mt-6 rounded-full font-semibold ${block.buttonClass}`}
               >
-                <Link href="/dashboard">{block.cta}</Link>
+                <Link href="/signup">{block.cta}</Link>
               </Button>
             </div>
           </motion.article>
