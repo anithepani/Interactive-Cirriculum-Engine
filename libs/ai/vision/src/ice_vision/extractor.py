@@ -6,7 +6,6 @@ import os
 import threading
 import urllib.request
 import tempfile
-from collections import Counter
 import cv2
 import numpy as np
 from PIL import Image

@@ -1,7 +1,6 @@
 """Tests for M3 vision extraction."""
 
 import numpy as np
-import pytest
 from unittest.mock import patch, MagicMock
 
 from ice_contracts.visual import VisualRegionType
@@ -82,11 +81,6 @@ def test_extract_frames_dedup_collapses_held_slides():
     holds one slide for ~40s: at a 5s sample rate that yields ~8 candidate
     frames that must collapse to ONE so OCR runs once, not 8 times.
     """
-    from ice_vision.extractor import _extract_frames
-
-    # Build a synthetic "video" is not trivial with cv2; instead exercise the
-    # dedup maths directly via _consider by simulating the inner loop on a
-    # stream of identical frames.
     import cv2
 
     kept: list = []
