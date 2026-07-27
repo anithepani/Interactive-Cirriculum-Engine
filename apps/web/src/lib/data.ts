@@ -65,7 +65,7 @@ export const NAV_LINKS: NavLink[] = [
   { label: "Get Started", href: "/upload" },
   { label: "Features", href: "#features" },
   { label: "Pricing", href: "#pricing" },
-  { label: "Dashboard", href: "/dashboard" },
+
   { label: "Solutions", href: "#solutions" },
   { label: "Enterprise", href: "#enterprise" },
 ];
@@ -104,6 +104,7 @@ export interface ExerciseType {
   bgClass: string;
   rotate: number;
   yOffset: number;
+  image: string;
 }
 
 export const EXERCISE_TYPES: ExerciseType[] = [
@@ -114,6 +115,7 @@ export const EXERCISE_TYPES: ExerciseType[] = [
     bgClass: "bg-blue",
     rotate: -8,
     yOffset: 0,
+    image: "https://images.unsplash.com/photo-1434030216411-0b793f4b4173?q=80&w=600&auto=format&fit=crop",
   },
   {
     key: "coding",
@@ -122,6 +124,7 @@ export const EXERCISE_TYPES: ExerciseType[] = [
     bgClass: "bg-orange",
     rotate: 0,
     yOffset: -12,
+    image: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?q=80&w=600&auto=format&fit=crop",
   },
   {
     key: "debugging",
@@ -130,6 +133,7 @@ export const EXERCISE_TYPES: ExerciseType[] = [
     bgClass: "bg-purple",
     rotate: 8,
     yOffset: 0,
+    image: "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?q=80&w=600&auto=format&fit=crop",
   },
 ];
 
@@ -183,13 +187,6 @@ export const FEATURE_CARDS: FeatureCard[] = [
       "Every checkpoint spins abstract tutorial narration into executable Python with live accuracy telemetry.",
     variant: "photo",
     telemetry: ["Concept: Recursion", "Accuracy: 84%"],
-  },
-  {
-    key: "profile",
-    title: "Developer Profile / Skill Solidification Nodes",
-    description:
-      "Radial mastery nodes visualize which concepts you've solidified versus what still lives in tutorial memory.",
-    variant: "dark",
   },
 ];
 
