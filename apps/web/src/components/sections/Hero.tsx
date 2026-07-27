@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { HERO_COPY } from "@/lib/data";
@@ -44,63 +45,40 @@ export default function Hero() {
 
   return (
     <section className="relative flex min-h-screen flex-col items-center justify-center bg-canvas px-6 pb-20 pt-28">
-      <motion.h1
-        className="max-w-5xl text-center font-display text-4xl font-black leading-[0.95] text-ink sm:text-6xl md:text-8xl"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-      >
-        <span style={{ opacity }}>{displayText}</span>
-        <span className="animate-pulse">|</span>
-      </motion.h1>
-
-      <div className="relative mx-auto mt-16 h-72 w-full max-w-2xl md:mt-20 md:h-80">
-        <motion.div
-          className="absolute inset-0 flex items-center justify-center"
-          variants={staggerContainer}
-          initial="hidden"
-          animate="visible"
+      <div className="flex flex-col justify-end min-h-[120px] sm:min-h-[150px] md:min-h-[200px]">
+        <motion.h1
+          className="max-w-5xl text-center font-display text-4xl font-black leading-[0.95] text-ink sm:text-6xl md:text-8xl"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
         >
-          {/* Desktop: 5 cards */}
-          <div className="hidden md:block">
-            {HERO_COPY.cardColors.map((color, i) => (
-              <motion.div
-                key={color}
-                custom={DESKTOP_FAN[i]}
-                variants={cardVariants}
-                className={cn(
-                  "absolute left-1/2 top-1/2 h-72 w-56 -translate-x-1/2 -translate-y-1/2 rounded-xl2 shadow-2xl",
-                  CARD_BG[color]
-                )}
-                style={{ zIndex: i }}
-              />
-            ))}
-          </div>
-          {/* Mobile: 3 cards */}
-          <div className="md:hidden">
-            {HERO_COPY.cardColors.slice(0, 3).map((color, i) => (
-              <motion.div
-                key={`m-${color}`}
-                custom={MOBILE_FAN[i]}
-                variants={cardVariants}
-                className={cn(
-                  "absolute left-1/2 top-1/2 h-40 w-28 -translate-x-1/2 -translate-y-1/2 rounded-xl2 shadow-2xl",
-                  CARD_BG[color]
-                )}
-                style={{ zIndex: i }}
-              />
-            ))}
-          </div>
-        </motion.div>
+          <span style={{ opacity }}>{displayText}</span>
+          <span className="animate-pulse">|</span>
+        </motion.h1>
+      </div>
+
+      <div className="relative mx-auto mt-16 h-72 w-full max-w-5xl overflow-hidden group">
+        <div className="flex gap-6 w-max animate-marquee group-hover:[animation-play-state:paused]">
+          {[...HERO_COPY.cardColors, ...HERO_COPY.cardColors].map((color, i) => (
+            <div
+              key={`${color}-${i}`}
+              className="h-72 w-56 rounded-xl2 shadow-xl overflow-hidden border-2 border-white/10 relative shrink-0 group/card cursor-pointer"
+            >
+              <div className="absolute inset-0 transition-transform duration-[10s] ease-in-out group-hover/card:scale-110 scale-105">
+                <Image src={`/images/story/${(i % 5) + 1}.jpg`} alt={`Story ${(i % 5) + 1}`} fill className="object-cover" />
+              </div>
+            </div>
+          ))}
+        </div>
 
         {HERO_COPY.floatingTags.map((tag, i) => (
           <span
             key={tag}
             className={cn(
-              "absolute animate-floatY rounded-full px-3 py-1 font-mono text-xs font-semibold",
+              "absolute animate-floatY rounded-full px-3 py-1 font-mono text-xs font-semibold z-10",
               TAG_STYLES[i],
-              i === 0 && "left-0 top-4",
-              i === 1 && "right-0 top-12",
+              i === 0 && "left-4 top-4",
+              i === 1 && "right-4 top-12",
               i === 2 && "bottom-8 left-1/4"
             )}
             style={{ animationDelay: `${i * 0.7}s` }}
