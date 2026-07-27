@@ -89,3 +89,7 @@ m3_visual_extraction/output/
 m3_visual_extraction/__pycache__/
 .vercel
 .env*
+
+# ---- Ignored local files ----
+*.db
+install.ps1
