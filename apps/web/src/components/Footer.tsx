@@ -17,7 +17,8 @@ export default function Footer() {
   const pathname = usePathname();
   const isAppRoute = /^\/(dashboard|exercises|progress|settings|upload|curriculum|support|discover|curricula|reader)/.test(pathname || "");
 
-  if (isAppRoute) return null;
+  const isAuthRoute = pathname === "/login" || pathname === "/signup";
+  if (isAppRoute || isAuthRoute) return null;
 
   return (
     <footer id="contact" className="bg-canvas px-6 py-16">
