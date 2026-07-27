@@ -22,8 +22,8 @@ export default function HomePage() {
       <LearnerMatrix />
       <FeatureMosaic />
       <MarketplaceCarousel />
-      <ComponentGridMatrix />
       <PricingNodes />
+      <ComponentGridMatrix />
       <NeonMarqueeBelt />
       <DualCTABlocks />
     </>
