@@ -7,6 +7,7 @@ import MainContent from "@/components/MainContent";
 import ThemeProviders from "@/components/ThemeProviders";
 import { NotificationsProvider } from "@/components/NotificationsProvider";
 import { PRODUCT } from "@/lib/data";
+import { FilmGrain } from "@/components/ui/FilmGrain";
 
 // Space Grotesk supports weights: 300, 400, 500, 600, 700, variable
 const spaceGrotesk = Space_Grotesk({
@@ -67,6 +68,7 @@ export default function RootLayout({
         <ThemeProviders>
           <NotificationsProvider>
             <div className="flex min-h-screen flex-col bg-canvas">
+              <FilmGrain />
               <Navbar />
               <MainContent>{children}</MainContent>
               <Footer />
