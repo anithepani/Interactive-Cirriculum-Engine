@@ -17,11 +17,24 @@ from ice_contracts.visual import VisualItem, VisualRegionType
 
 logger = logging.getLogger(__name__)
 
+# Pin ONNX Runtime thread limits at import time, BEFORE rapidocr/onnxruntime is
+# imported anywhere in the process. ONNX reads OMP_NUM_THREADS / ORT env vars
+# once when it initializes its global thread pool; setting them lazily inside
+# _get_ocr_engine() is too late once a worker has already touched the runtime.
+# setdefault never overrides an operator-provided value.
+_intra = settings.vision.onnx_intra_op_threads
+if _intra > 0:
+    os.environ.setdefault("OMP_NUM_THREADS", str(_intra))
+    os.environ.setdefault("ORT_INTRA_OP_NUM_THREADS", str(_intra))
+
 _ocr_engine = None
 _ocr_engine_lock = threading.Lock()
 _trocr_model = None
 _trocr_processor = None
 _ts_parser = None
+# Running count of frames that took the heavy fallback path, guarded by the
+# engine lock so the threaded OCR pool can't race past max_fallback_frames.
+_fallback_count = 0
 
 
 def _get_ocr_engine():
@@ -29,18 +42,21 @@ def _get_ocr_engine():
     if _ocr_engine is None:
         with _ocr_engine_lock:
             if _ocr_engine is None:
-                # Cap ONNX intra-op threads so the threaded OCR pool (each worker
-                # shares this one engine) doesn't oversubscribe cores. ONNX
-                # Runtime reads OMP_NUM_THREADS when it initializes its thread
-                # pool, so this must happen before rapidocr/onnxruntime is
-                # imported. setdefault never overrides an operator-provided
-                # value.
-                intra = settings.vision.onnx_intra_op_threads
-                if intra > 0:
-                    os.environ.setdefault("OMP_NUM_THREADS", str(intra))
                 from rapidocr_onnxruntime import RapidOCR
 
-                _ocr_engine = RapidOCR()
+                # Pass intra_op_num_threads explicitly so the cap is honored
+                # even when the env vars were read too late or ignored by the
+                # RapidOCR default initializer.
+                intra = settings.vision.onnx_intra_op_threads
+                kwargs: dict = {}
+                if intra > 0:
+                    try:
+                        kwargs["intra_op_num_threads"] = intra
+                    except Exception:
+                        # Older RapidOCR versions don't accept this kwarg; the
+                        # env vars set at import time still apply.
+                        pass
+                _ocr_engine = RapidOCR(**kwargs) if kwargs else RapidOCR()
     return _ocr_engine
 
 
@@ -113,11 +129,13 @@ def _extract_frames(
     dedup_limit = 64 * 64 * dedup_threshold
 
     kept: list[tuple[int, float, np.ndarray]] = []
-    # Compare each candidate against a short window of recently-kept frames so
+    # Compare each candidate against a rolling window of recently-kept frames so
     # recurring near-duplicates (e.g. a held slide) are dropped cheaply, not only
-    # when they happen to follow the immediately-previous kept frame.
+    # when they happen to follow the immediately-previous kept frame. The window
+    # is widened (8 vs 3) so slides held for ~40s at a 5s sample rate still
+    # collapse to a single frame.
     recent_hashes: list[np.ndarray] = []
-    dedup_window = 3
+    dedup_window = 8
 
     def _consider(frame: np.ndarray, idx: int) -> bool:
         small = cv2.resize(frame, (64, 64))
@@ -383,36 +401,53 @@ def _ocr_single_frame(args: tuple) -> dict | None:
         # Confidence threshold check
         if avg_conf < settings.vision.ocr_confidence_threshold:
             if settings.vision.enable_heavy_fallbacks:
-                # Try Upscaling
-                logger.debug(f"Low confidence ({avg_conf:.2f}) on frame {f_idx}, attempting upscale...")
-                upscaled = _upscale_image(frame)
-                if upscaled is not None:
-                    upscaled_rgb = cv2.cvtColor(upscaled, cv2.COLOR_BGR2RGB)
-                    up_result, _ = ocr(upscaled_rgb)
-                    if up_result:
-                        up_texts = []
-                        up_conf = 0.0
-                        for line in up_result:
-                            up_texts.append(line[1])
-                            up_conf += line[2]
-                        up_avg_conf = up_conf / len(up_result)
-                        if up_avg_conf > avg_conf:
-                            full_text = "\n".join(up_texts)
-                            avg_conf = up_avg_conf
-                
-                # If still low, use TrOCR
-                if avg_conf < settings.vision.ocr_confidence_threshold:
-                    try:
-                        processor, model = _get_trocr(device)
-                        pil_img = Image.fromarray(rgb_frame)
-                        pixel_values = processor(pil_img, return_tensors="pt").pixel_values.to(device)
-                        generated_ids = model.generate(pixel_values)
-                        trocr_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-                        if len(trocr_text.strip()) > 0:
-                            full_text = trocr_text
-                            avg_conf = 0.85
-                    except Exception as e:
-                        logger.warning(f"TrOCR fallback failed: {e}")
+                # Bound the heavy fallback path: only a few frames per run may
+                # invoke upscale + TrOCR, otherwise one pathological video can
+                # spend minutes in the fallback path and blow the latency budget.
+                global _fallback_count
+                with _ocr_engine_lock:
+                    allowed = _fallback_count < settings.vision.max_fallback_frames
+                    if allowed:
+                        _fallback_count += 1
+                if not allowed:
+                    logger.debug(
+                        "Low confidence (%.2f) on frame %s but fallback budget "
+                        "exhaustued (%s); discarding frame",
+                        avg_conf, f_idx, settings.vision.max_fallback_frames,
+                    )
+                    if not full_text.strip():
+                        return None
+                else:
+                    # Try Upscaling
+                    logger.debug(f"Low confidence ({avg_conf:.2f}) on frame {f_idx}, attempting upscale...")
+                    upscaled = _upscale_image(frame)
+                    if upscaled is not None:
+                        upscaled_rgb = cv2.cvtColor(upscaled, cv2.COLOR_BGR2RGB)
+                        up_result, _ = ocr(upscaled_rgb)
+                        if up_result:
+                            up_texts = []
+                            up_conf = 0.0
+                            for line in up_result:
+                                up_texts.append(line[1])
+                                up_conf += line[2]
+                            up_avg_conf = up_conf / len(up_result)
+                            if up_avg_conf > avg_conf:
+                                full_text = "\n".join(up_texts)
+                                avg_conf = up_avg_conf
+
+                    # If still low, use TrOCR
+                    if avg_conf < settings.vision.ocr_confidence_threshold:
+                        try:
+                            processor, model = _get_trocr(device)
+                            pil_img = Image.fromarray(rgb_frame)
+                            pixel_values = processor(pil_img, return_tensors="pt").pixel_values.to(device)
+                            generated_ids = model.generate(pixel_values)
+                            trocr_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                            if len(trocr_text.strip()) > 0:
+                                full_text = trocr_text
+                                avg_conf = 0.85
+                        except Exception as e:
+                            logger.warning(f"TrOCR fallback failed: {e}")
             else:
                 # Discard frames with no readable text when fallbacks are disabled
                 if not full_text.strip():
