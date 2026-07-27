@@ -37,8 +37,9 @@ def get_gemini_model(generation_config: dict[str, Any] | None = None) -> Any:
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY environment variable is not set")
+    api_key = api_key.strip()
 
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=api_key, transport="rest")
 
     available_models = [
         m.name

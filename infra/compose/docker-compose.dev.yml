@@ -111,7 +111,7 @@ services:
     env_file:
       - ../../.env
     environment:
-      DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
+      # DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2
@@ -154,7 +154,7 @@ services:
     env_file:
      - ../../.env 
     environment:
-      DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
+      # DATABASE_URL: postgresql+asyncpg://ice:ice_dev_password@postgres:5432/ice
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/1
       CELERY_RESULT_BACKEND: redis://redis:6379/2

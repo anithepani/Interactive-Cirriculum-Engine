@@ -4,6 +4,7 @@ Tracks token spend against LLM_TOKEN_BUDGET_PER_CURRICULUM; flips to the cheap
 fallback model tier when the budget is exceeded; pauses the pipeline if a
 tenant quota is hit (§6.4 degradation).
 """
+
 from __future__ import annotations
 
 
