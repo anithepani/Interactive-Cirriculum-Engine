@@ -36,4 +36,7 @@ RUN cd apps/remotion && npm install
 COPY libs ./libs
 COPY db ./db
 
+# Install workspace packages into the venv (uv run target), no-deps (already synced).
+RUN uv pip install --no-deps -p /opt/ice-venv ./libs/contracts ./libs/shared ./apps/api ./apps/worker
+
 CMD ["uv", "run", "celery", "-A", "ice_worker.celery_app", "worker", "-l", "info"]
