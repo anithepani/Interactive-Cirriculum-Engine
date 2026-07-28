@@ -60,6 +60,16 @@ class TokenResponse(BaseModel):
     user: dict
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8)
+
+
 # --- Helpers ---
 
 
@@ -409,6 +419,61 @@ async def resend_code(email: str, session: AsyncSession = Depends(get_session)):
 
     await send_verification_email(email, code, user.name)
     return {"message": "Verification code resent"}
+
+
+@router.post("/forgot-password")
+async def forgot_password(data: ForgotPasswordRequest, session: AsyncSession = Depends(get_session)):
+    stmt = select(User).where(User.email == data.email)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    # Always return success to prevent email enumeration
+    if not user:
+        return {"message": "If an account exists, a reset code has been sent."}
+
+    # Invalidate previous codes
+    stmt_invalidate = select(VerificationCode).where(
+        and_(
+            VerificationCode.email == data.email,
+            VerificationCode.is_used == False
+        )
+    )
+    res_inv = await session.execute(stmt_invalidate)
+    for old_code in res_inv.scalars():
+        old_code.is_used = True
+    await session.commit()
+
+    code = generate_verification_code()
+    vc = VerificationCode(
+        email=data.email,
+        code=code,
+        expires_at=datetime.utcnow() + timedelta(minutes=15),
+    )
+    session.add(vc)
+    await session.commit()
+
+    print(f"RESET PASSWORD CODE FOR {data.email}: {code}")
+    # In a real app we'd send an email here instead of just printing it
+    return {"message": "If an account exists, a reset code has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(data: ResetPasswordRequest, session: AsyncSession = Depends(get_session)):
+    if not await verify_code(session, data.email, data.code):
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    stmt = select(User).where(User.email == data.email)
+    result = await session.execute(stmt)
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.password_hash = hash_password(data.new_password)
+    user.token_version += 1  # Revoke all existing sessions
+    await session.commit()
+    
+    return {"message": "Password has been successfully reset."}
 
 
 @router.get("/me")
