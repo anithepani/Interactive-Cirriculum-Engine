@@ -1,0 +1,73 @@
+# ============================================================
+# ICE — Production stack (single VM, /opt/ice)
+# External managed: Neon (Postgres), Upstash (Redis)
+# Self-hosted:       MinIO (S3), Caddy (TLS reverse proxy)
+# Images pulled from GHCR: ghcr.io/<GHCR_OWNER>/ice/{api,worker}:<IMAGE_TAG>
+# ============================================================
+name: ice
+
+services:
+  api:
+    image: ghcr.io/${GHCR_OWNER:-anithepani}/ice/api:${IMAGE_TAG:-latest}
+    env_file: .env
+    expose:
+      - "8000"
+    depends_on: [minio]
+    networks: [ice]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: ghcr.io/${GHCR_OWNER:-anithepani}/ice/worker:${IMAGE_TAG:-latest}
+    env_file: .env
+    # Tuned for Upstash free-tier (10K cmds/day):
+    #   --without-gossip/-mingle/-heartbeat removes periodic Redis round-trips.
+    #   -s 30 reduces scheduler ticks (one per 30s vs default 5s).
+    command: ["uv", "run", "celery", "-A", "ice_worker.celery_app", "worker", "-l", "info", "--without-gossip", "--without-mingle", "--without-heartbeat", "-s", "30"]
+    # 8 GB VM — worker gets 1.5 GB hard / 800 MB soft (rest for api + minio + caddy + OS)
+    mem_limit: 1500m
+    mem_reservation: 800m
+    networks: [ice]
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ice_minio
+      MINIO_ROOT_PASSWORD: ice_minio_secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks: [ice]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [ice]
+    depends_on: [api]
+    restart: unless-stopped
+
+networks:
+  ice:
+    driver: bridge
+
+volumes:
+  minio_data:
+  caddy_data:
+  caddy_config:

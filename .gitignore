@@ -84,3 +84,6 @@ long_video_*.json
 
 .vercel
 .env*
+
+# Production env template (placeholders only — real .env stays on the VM)
+!infra/prod/.env.example

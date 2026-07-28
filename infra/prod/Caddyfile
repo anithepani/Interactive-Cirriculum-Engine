@@ -1,0 +1,27 @@
+# ICE production reverse proxy.
+# sslip.io resolves <IP>.sslip.io to <IP>, so Caddy can complete the
+# Let's Encrypt HTTP-01 challenge without owning a domain.
+# Ports 80 + 443 must be open in the Azure NSG for the challenge + traffic.
+
+{
+	email zubair.storehub@gmail.com
+	admin off
+}
+
+4.247.144.148.sslip.io {
+	encode zstd gzip
+
+	# Backend routes: API, health, docs, OpenAPI spec.
+	# OAuth callbacks live under /api/v1/auth/* (matched by /api/*).
+	# IMPORTANT: use `handle` (not `handle_path`) so the full path is
+	# preserved — the API expects /api/v1/... verbatim.
+	@backend path /api/* /health /docs* /redoc* /openapi.json
+	handle @backend {
+		reverse_proxy api:8000
+	}
+
+	# Frontend is served by Vercel — anything else is a 404.
+	handle {
+		respond "Not Found" 404
+	}
+}
