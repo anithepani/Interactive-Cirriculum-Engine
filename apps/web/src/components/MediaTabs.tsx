@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Film, BookOpen, Sparkles, Video } from "lucide-react";
+import { Film, BookOpen, Sparkles, Video, Bot } from "lucide-react";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 import ConceptGraph from "./ConceptGraph";
+import TutorChat from "./TutorChat";
 
 interface MediaTabsProps {
   curriculumId: number;
@@ -16,9 +17,11 @@ interface MediaTabsProps {
   signalStatus: "none" | "queued" | "processing" | "ready" | "failed";
   signalUrl: string | null;
   onTriggerSignal: () => void;
+  
+  getCurrentTime: () => number;
 }
 
-type TabKey = "signal" | "recap" | "study" | "graph";
+type TabKey = "signal" | "recap" | "study" | "graph" | "tutor";
 
 export default function MediaTabs({
   curriculumId,
@@ -29,6 +32,7 @@ export default function MediaTabs({
   signalStatus,
   signalUrl,
   onTriggerSignal,
+  getCurrentTime,
 }: MediaTabsProps) {
   const [active, setActive] = useState<TabKey>("signal");
 
@@ -37,9 +41,17 @@ export default function MediaTabs({
     { key: "recap", label: "Recap Video", icon: Film },
     { key: "study", label: "Study Guide", icon: BookOpen },
     { key: "graph", label: "Skill Tree", icon: Sparkles },
+    { key: "tutor", label: "AI Tutor", icon: Bot },
   ];
 
   const renderContent = () => {
+    if (active === "tutor") {
+      return (
+        <div className="pt-2">
+          <TutorChat curriculumId={curriculumId} getCurrentTime={getCurrentTime} />
+        </div>
+      );
+    }
     if (active === "graph") {
       return (
         <div className="pt-2">

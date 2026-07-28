@@ -697,6 +697,13 @@ export default function CurriculumPage() {
                 alert("Failed to start signal video generation.");
               }
             }}
+            getCurrentTime={() => {
+              try {
+                return playerRef.current?.getCurrentTime() || 0;
+              } catch {
+                return 0;
+              }
+            }}
           />
         </div>
       </div>
