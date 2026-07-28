@@ -331,35 +331,45 @@ Here is the transcript data:
             # Instant input seeking
             cmd.extend(["-ss", str(start_t), "-t", str(dur), "-i", video_path])
             
-            fade_out_start = max(0.1, dur - 0.3)
-            # Apply asetpts FIRST so the afade timestamps align perfectly
-            a_part = f"[{i}:a]asetpts=PTS-STARTPTS,afade=t=in:st=0:d=0.3,afade=t=out:st={fade_out_start:.2f}:d=0.3[a{i}]"
-            filter_complex.append(a_part)
-            
             if has_video:
-                v_part = f"[{i}:v]setpts=PTS-STARTPTS[v{i}]"
-                filter_complex.append(v_part)
+                filter_complex.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
+            filter_complex.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
+
+        trans_dur = 1.0
+        v_out = "[v0]" if has_video else ""
+        a_out = "[a0]"
+        
+        if len(selected) > 0:
+            current_v_dur = (selected[0]["end"] - selected[0]["start"]) + 0.4
+            
+            for i in range(1, len(selected)):
+                clip_dur = (selected[i]["end"] - selected[i]["start"]) + 0.4
+                offset = max(0, current_v_dur - trans_dur)
+                
+                if has_video:
+                    next_v_out = f"[vx{i}]"
+                    # Wipe left mimics a page turning to the next concept
+                    filter_complex.append(f"{v_out}[v{i}]xfade=transition=wipeleft:duration={trans_dur}:offset={offset:.2f}{next_v_out}")
+                    v_out = next_v_out
+                    
+                next_a_out = f"[ax{i}]"
+                filter_complex.append(f"{a_out}[a{i}]acrossfade=d={trans_dur}{next_a_out}")
+                a_out = next_a_out
+                
+                current_v_dur = current_v_dur + clip_dur - trans_dur
 
         if has_video:
-            concat_inputs = "".join([f"[v{i}][a{i}]" for i in range(len(selected))])
-            concat_filter = f"{concat_inputs}concat=n={len(selected)}:v=1:a=1[outv][outa]"
-            filter_complex.append(concat_filter)
-            
             cmd.extend([
                 "-filter_complex", ";".join(filter_complex),
-                "-map", "[outv]", "-map", "[outa]",
+                "-map", v_out, "-map", a_out,
                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "28",
                 "-c:a", "aac", "-b:a", "128k",
                 output_path
             ])
         else:
-            concat_inputs = "".join([f"[a{i}]" for i in range(len(selected))])
-            concat_filter = f"{concat_inputs}concat=n={len(selected)}:v=0:a=1[outa]"
-            filter_complex.append(concat_filter)
-            
             cmd.extend([
                 "-filter_complex", ";".join(filter_complex),
-                "-map", "[outa]",
+                "-map", a_out,
                 "-c:a", "aac", "-b:a", "128k",
                 output_path
             ])
