@@ -113,6 +113,7 @@ class Curriculum(Base):
     difficulty = Column(String, nullable=True, server_default="medium", default="medium")
     framework_version = Column(String, nullable=True)
     duration = Column(Float, nullable=True)
+    learner_notes = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     ready_at = Column(DateTime, nullable=True)
     # ── Recap Video feature ──────────────────────────────────────────────

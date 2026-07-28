@@ -413,6 +413,10 @@ class CurriculumCreate(BaseModel):
     difficulty: Optional[str] = "medium"
 
 
+class UpdateNotesRequest(BaseModel):
+    notes: str
+
+
 class EvaluateRequest(BaseModel):
     checkpoint_id: int
     answer: str
@@ -1133,6 +1137,7 @@ async def get_curriculum(
             "video_url": curriculum.source_ref,
             "source_type": curriculum.source_type,
             "duration": curriculum.duration,
+            "learner_notes": curriculum.learner_notes,
             "segments": [
                 {
                     "id": seg.id,
@@ -1261,4 +1266,27 @@ async def start_signal_video(
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Error starting signal video: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{curriculum_id}/notes")
+async def update_curriculum_notes(
+    curriculum_id: int,
+    payload: UpdateNotesRequest,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        set_tenant_context(str(current_user.tenant_id))
+        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        result = await session.execute(stmt)
+        c = result.scalar_one_or_none()
+        if not c:
+            raise HTTPException(status_code=404, detail="Not found")
+
+        c.learner_notes = payload.notes
+        await session.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error updating notes: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
