@@ -120,6 +120,10 @@ def _probe_subtitles(url: str) -> tuple[dict, dict]:
         "writesubtitles": True,
         "writeautomaticsub": True,
     }
+    if os.path.exists("/app/cookies.txt"):
+        opts["cookiefile"] = "/app/cookies.txt"
+    else:
+        opts["extractor_args"] = {"youtube": ["player_client=android"]}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False) or {}
     return (info.get("subtitles") or {}, info.get("automatic_captions") or {})
@@ -139,6 +143,10 @@ def _download_vtt(url: str, lang: str, automatic: bool, out_dir: str) -> Optiona
         "writeautomaticsub": automatic,
         "outtmpl": outtmpl,
     }
+    if os.path.exists("/app/cookies.txt"):
+        opts["cookiefile"] = "/app/cookies.txt"
+    else:
+        opts["extractor_args"] = {"youtube": ["player_client=android"]}
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
     for fname in os.listdir(out_dir):

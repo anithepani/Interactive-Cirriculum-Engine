@@ -75,6 +75,10 @@ def _probe(url: str) -> dict[str, Any]:
         "skip_download": True,
         "noplaylist": True,
     }
+    if os.path.exists("/app/cookies.txt"):
+        opts["cookiefile"] = "/app/cookies.txt"
+    else:
+        opts["extractor_args"] = {"youtube": ["player_client=android"]}
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     return info or {}
@@ -102,6 +106,10 @@ def _download_video(url: str, out_dir: str) -> str:
         "noplaylist": True,
         "ffmpeg_location": os.path.dirname(_find_ffmpeg()) or None,
     }
+    if os.path.exists("/app/cookies.txt"):
+        opts["cookiefile"] = "/app/cookies.txt"
+    else:
+        opts["extractor_args"] = {"youtube": ["player_client=android"]}
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
     # yt-dlp picks the extension; find the downloaded file.

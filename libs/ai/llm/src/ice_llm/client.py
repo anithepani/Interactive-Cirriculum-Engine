@@ -1,6 +1,6 @@
-"""Gemini-backed LLM client.
+"""Groq-backed LLM client.
 
-Uses gemini-3.5-flash via the OpenAI compatibility endpoint to bypass Groq rate limits.
+Uses llama-3.1-70b-versatile via the OpenAI compatibility endpoint.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import os
 import random
 import time
 
-from openai import OpenAI, RateLimitError
+from openai import OpenAI, RateLimitError, InternalServerError, APIConnectionError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,8 +19,8 @@ from ice_shared.settings import settings  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# Use Gemini by default for speed
-MODEL = "gemini-3.5-flash"
+# Use Groq
+MODEL = "llama-3.3-70b-versatile"
 MAX_RETRIES = max(0, int(settings.groq_max_retries))
 BACKOFF_INITIAL = max(0.1, float(settings.groq_backoff_initial))
 BACKOFF_CAP_SEC = 60.0
@@ -38,7 +38,7 @@ def _retry_after_seconds(exc: RateLimitError) -> float | None:
         return None
 
 
-def _backoff_delay(attempt: int, exc: RateLimitError) -> float:
+def _backoff_delay(attempt: int, exc: Exception) -> float:
     """Compute the sleep before the next attempt."""
     server_hint = _retry_after_seconds(exc)
     if server_hint is not None:
@@ -51,15 +51,15 @@ class LLMClient:
     """Thin client around the OpenAI SDK configured for Gemini."""
 
     def __init__(self) -> None:
-        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        api_key = os.environ.get("GROQ_API_KEY", "").strip()
         if not api_key:
             raise RuntimeError(
-                "GEMINI_API_KEY is not set in the environment. "
+                "GROQ_API_KEY is not set in the environment. "
                 "Export it before constructing LLMClient."
             )
         self.client = OpenAI(
             api_key=api_key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            base_url="https://api.groq.com/openai/v1",
             max_retries=0
         )
 
@@ -74,7 +74,7 @@ class LLMClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
-        last_error: RateLimitError | None = None
+        last_error: Exception | None = None
         for attempt in range(MAX_RETRIES + 1):
             try:
                 response = self.client.chat.completions.create(
@@ -82,12 +82,13 @@ class LLMClient:
                     messages=messages,
                 )
                 return response.choices[0].message.content
-            except RateLimitError as exc:
+            except (RateLimitError, InternalServerError, APIConnectionError) as exc:
                 last_error = exc
                 if attempt < MAX_RETRIES:
                     delay = _backoff_delay(attempt, exc)
                     logger.warning(
-                        "Gemini 429 rate-limit (attempt %d/%d); backing off %.2fs",
+                        "Groq API error (%s) (attempt %d/%d); backing off %.2fs",
+                        type(exc).__name__,
                         attempt + 1,
                         MAX_RETRIES,
                         delay,
