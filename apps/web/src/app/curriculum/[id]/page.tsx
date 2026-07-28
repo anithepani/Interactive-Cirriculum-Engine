@@ -69,6 +69,7 @@ export default function CurriculumPage() {
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [isNotesOpen, setIsNotesOpen] = useState(false);
   const [notesText, setNotesText] = useState("");
+  const [notesInitialized, setNotesInitialized] = useState(false);
   const [savedNotes, setSavedNotes] = useState(false);
 
   const playerRef = useRef<PlayerHandle | null>(null);
@@ -113,9 +114,18 @@ export default function CurriculumPage() {
       setStatusMap((prev) => ({ ...hydratedStatus, ...prev }));
     }
     if (Object.keys(hydratedSubmissions).length) {
-      setSubmissionMap((prev) => ({ ...hydratedSubmissions, ...prev }));
+      setSubmissionMap((prev) => ({ ...prev, ...hydratedSubmissions }));
     }
   }, [checkpoints]);
+
+  useEffect(() => {
+    if (data && !notesInitialized) {
+      if (data.learner_notes) {
+        setNotesText(data.learner_notes);
+      }
+      setNotesInitialized(true);
+    }
+  }, [data, notesInitialized]);
 
   const openExerciseModal = useCallback(
     (checkpoint: Checkpoint, index: number) => {
@@ -433,7 +443,7 @@ export default function CurriculumPage() {
           <CheckpointDonut checkpoints={checkpoints} statusMap={statusMap} />
         </div>
 
-        <div className={`mt-6 flex flex-col gap-6 ${isNotesOpen && !isTheaterMode ? 'lg:flex-row' : ''}`}>
+        <div className="mt-6 flex flex-col gap-6">
           {/* Main Video & Progress */}
           <div className="flex-1 space-y-4">
             <div className="flex items-center justify-end gap-3 mb-2">
@@ -598,31 +608,64 @@ export default function CurriculumPage() {
             />
           </div>
 
-          {/* Integrated Notes Panel */}
+          {/* Floating Widget for Notes */}
           {isNotesOpen && (
-            <div className={`flex flex-col rounded-[2rem] border border-ink/10 bg-white p-6 shadow-sm transition-all ${isTheaterMode ? 'h-64' : 'lg:w-[350px] shrink-0'}`}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-display text-lg font-bold text-ink">My Notes</h3>
-                <button
-                  onClick={() => {
-                    setSavedNotes(true);
-                    setTimeout(() => setSavedNotes(false), 2000);
-                  }}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-full"
+            <div className="fixed bottom-6 right-6 z-50 w-full max-w-sm bg-white dark:bg-zinc-900 shadow-2xl border border-ink/10 flex flex-col rounded-3xl overflow-hidden animate-in slide-in-from-bottom-8 duration-300">
+              <div className="p-4 border-b border-ink/10 flex justify-between items-center bg-canvas">
+                <h2 className="font-display text-md font-bold text-ink flex items-center gap-2">
+                  <PenSquare className="w-4 h-4 text-indigo-500" />
+                  My Notes
+                </h2>
+                <button 
+                  onClick={() => setIsNotesOpen(false)}
+                  className="p-1.5 rounded-full hover:bg-ink/5 transition text-ink-soft hover:text-ink"
                 >
-                  {savedNotes ? <CheckCircle className="h-3 w-3" /> : <Save className="h-3 w-3" />}
-                  {savedNotes ? "Saved!" : "Save Notes"}
+                  <Minimize className="w-4 h-4" />
                 </button>
               </div>
-              <textarea
-                value={notesText}
-                onChange={(e) => setNotesText(e.target.value)}
-                placeholder="Type your notes here... (Markdown supported)"
-                className="flex-1 w-full resize-none rounded-xl border-none bg-ink/5 p-4 text-sm text-ink outline-none focus:ring-2 focus:ring-indigo-500/50"
-              />
-              <p className="mt-3 text-xs text-ink-soft text-center">
-                Notes auto-timestamp to current video time.
-              </p>
+              
+              <div className="flex flex-col bg-canvas p-4 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                <textarea
+                  ref={(el) => {
+                    if (el) {
+                      el.style.height = 'auto';
+                      el.style.height = `${el.scrollHeight}px`;
+                    }
+                  }}
+                  value={notesText}
+                  onChange={(e) => {
+                    setNotesText(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${e.target.scrollHeight}px`;
+                  }}
+                  placeholder="Type your notes here... (Markdown supported)"
+                  className="w-full resize-none rounded-xl border-none bg-white dark:bg-black/20 p-4 text-sm text-ink outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-inner overflow-hidden min-h-[100px]"
+                />
+                <div className="mt-4 flex items-center justify-between">
+                  <p className="text-xs text-ink-soft">
+                    Auto-timestamps to current time.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      setSavedNotes(true);
+                      setTimeout(() => setSavedNotes(false), 2000);
+                      try {
+                        await fetch(`/api/v1/curricula/${params.id}/notes`, {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ notes: notesText }),
+                        });
+                      } catch (e) {
+                        console.error("Failed to save notes:", e);
+                      }
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-600 hover:text-indigo-700 bg-indigo-50 px-4 py-2 rounded-full transition-all active:scale-95"
+                  >
+                    {savedNotes ? <CheckCircle className="h-3 w-3" /> : <Save className="h-3 w-3" />}
+                    {savedNotes ? "Saved!" : "Save Notes"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
