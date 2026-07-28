@@ -22,10 +22,7 @@ COPY pyproject.toml uv.lock* ./
 COPY libs/ ./libs/
 COPY apps/api/pyproject.toml ./apps/api/
 COPY apps/worker/pyproject.toml ./apps/worker/
-# Install production deps, then add uvicorn (ASGI server, often a dev dependency)
-# plus alembic and pydantic-settings for runtime migrations.
-RUN uv sync --no-dev --frozen 2>/dev/null || uv sync --no-dev \
- && uv pip install --system uvicorn alembic pydantic pydantic-settings
+RUN uv sync --package ice-api --no-dev --frozen 2>/dev/null || uv sync --package ice-api --no-dev
 
 # App source
 COPY apps/api ./apps/api
@@ -33,7 +30,8 @@ COPY apps/worker ./apps/worker
 COPY libs ./libs
 COPY db ./db
 
-# Install workspace packages (with deps) into the venv that uv run uses.
-RUN uv pip install -p /opt/ice-venv ./libs/contracts ./libs/shared ./apps/api ./apps/worker
+# Re-sync with source present so the workspace packages themselves resolve.
+RUN uv sync --package ice-api --no-dev --frozen 2>/dev/null || uv sync --package ice-api --no-dev \
+ && uv pip install -p /opt/ice-venv uvicorn
 
-CMD ["uv", "run", "uvicorn", "ice_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "--no-sync", "uvicorn", "ice_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
