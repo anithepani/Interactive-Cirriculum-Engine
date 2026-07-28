@@ -113,12 +113,19 @@ function HeroBanner({ user }: { user: AuthUser | null }) {
           <p className="mt-3 text-sm text-white/80 md:text-base leading-relaxed">
             Sharpen your skills with professional interactive courses automatically generated from your favorite videos.
           </p>
-          <div className="mt-8">
+          <div className="mt-8 flex flex-wrap gap-4">
             <Link
               href="/upload"
               className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-bold text-indigo-600 shadow-md transition hover:scale-105 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
             >
               Upload New Curriculum
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/quiz"
+              className="inline-flex items-center gap-2 rounded-full bg-indigo-500/20 border border-white/20 px-6 py-3 text-sm font-bold text-white shadow-md transition hover:scale-105 hover:bg-indigo-500/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 backdrop-blur-sm"
+            >
+              Take Random Quiz
               <ChevronRight className="h-4 w-4" />
             </Link>
           </div>

@@ -134,6 +134,7 @@ def _user_dict(user: User) -> dict:
         "name": user.name, 
         "email": user.email,
         "avatar_url": user.avatar_url,
+        "xp": user.xp,
         "streak_count": user.streak_count,
         "streak_color": user.streak_color
     }
@@ -452,8 +453,7 @@ async def forgot_password(data: ForgotPasswordRequest, session: AsyncSession = D
     session.add(vc)
     await session.commit()
 
-    print(f"RESET PASSWORD CODE FOR {data.email}: {code}")
-    # In a real app we'd send an email here instead of just printing it
+    await send_verification_email(data.email, code, user.name)
     return {"message": "If an account exists, a reset code has been sent."}
 
 

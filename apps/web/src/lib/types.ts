@@ -122,3 +122,79 @@ export interface ExerciseRunResult {
   stderr?: string;
   message?: string;
 }
+
+export interface ReviewOutputPrediction {
+  type: "output_prediction";
+  code: string;
+  expected_output: string;
+  explanation: string;
+}
+
+export interface ReviewFillGap {
+  type: "fill_gap";
+  code: string;
+  answer: string;
+  explanation: string;
+}
+
+export interface ReviewSpotBug {
+  type: "spot_bug";
+  code: string;
+  bug_line: number;
+  fixed_code: string;
+  expected_output?: string;
+  explanation: string;
+}
+
+export interface ReviewConceptRecall {
+  type: "concept_recall";
+  question: string;
+  options: string[];
+  answer_index: number;
+  explanation: string;
+}
+
+export interface TraceStateRow {
+  iteration: number | string;
+  variables: Record<string, string>;
+}
+
+export interface ReviewTraceState {
+  type: "trace_state";
+  code: string;
+  initial_variables: Record<string, string>;
+  table: TraceStateRow[];
+  explanation: string;
+}
+
+export interface ReviewLegacy {
+  type: "legacy";
+  legacy: true;
+  question: string;
+  answer: string;
+}
+
+export type ReviewPayload =
+  | ReviewOutputPrediction
+  | ReviewFillGap
+  | ReviewSpotBug
+  | ReviewConceptRecall
+  | ReviewTraceState
+  | ReviewLegacy;
+
+export interface ReviewCard {
+  concept_id: number;
+  label: string;
+  description: string;
+  difficulty: number;
+  category?: string;
+  review_format?: string;
+  review_payload?: ReviewPayload;
+  srs_interval: number;
+  next_review_date: string | null;
+  exercise?: {
+    id: number;
+    type: string;
+    payload: any;
+  } | null;
+}

@@ -23,6 +23,15 @@ from ice_contracts.checkpoint import Checkpoint
 from ice_contracts.curriculum import Curriculum, CurriculumStatus
 from ice_contracts.adaptive import AdaptiveState, LearnerPerformance
 from ice_contracts.skill import SkillModel
+from ice_contracts.review import (
+    ReviewPayload,
+    ReviewOutputPrediction,
+    ReviewFillGap,
+    ReviewSpotBug,
+    ReviewConceptRecall,
+    ReviewTraceState,
+    ReviewLegacy,
+)
 from ice_contracts.api import (
     AdaptiveStateResponse,
     CurriculumGenerateRequest,
@@ -75,6 +84,14 @@ __all__ = [
     "VisionExtractRequest",
     "VisionExtractResponse",
     "NlpSegmentRequest",
+    # review
+    "ReviewPayload",
+    "ReviewOutputPrediction",
+    "ReviewFillGap",
+    "ReviewSpotBug",
+    "ReviewConceptRecall",
+    "ReviewTraceState",
+    "ReviewLegacy",
 ]
 
 __version__ = "0.1.0"

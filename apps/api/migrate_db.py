@@ -21,7 +21,14 @@ async def main():
     except Exception as e:
         print(f'Error adding token_version: {e}')
 
-    await conn.close()
+    try:
+        await conn.execute("ALTER TABLE concepts ADD COLUMN IF NOT EXISTS category VARCHAR;")
+        await conn.execute("ALTER TABLE concepts ADD COLUMN IF NOT EXISTS review_format VARCHAR;")
+        await conn.execute("ALTER TABLE concepts ADD COLUMN IF NOT EXISTS review_payload JSONB;")
+        print('Added category, review_format, and review_payload to concepts')
+    except Exception as e:
+        print(f'Error adding concept fields: {e}')
 
+    await conn.close()
 if __name__ == "__main__":
     asyncio.run(main())

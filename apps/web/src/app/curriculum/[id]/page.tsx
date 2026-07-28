@@ -671,6 +671,7 @@ export default function CurriculumPage() {
 
         {/* Unified Supplemental Content: Cinematic Video, Recap Video, Study Guide */}
           <MediaTabs
+            curriculumId={data.id}
             recapStatus={data.recap_status || "none"}
             recapUrl={data.recap_url ?? null}
             studyGuideHtml={data.recap_transcript_html ?? null}

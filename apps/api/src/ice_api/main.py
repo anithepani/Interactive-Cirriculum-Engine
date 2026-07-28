@@ -21,6 +21,7 @@ from ice_api.routers import (
     recommendations,
     stats,
     support,
+    review,
 )
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", ".env"))
@@ -168,6 +169,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications.router)  # GET /api/v1/notifications, POST /{id}/read
     app.include_router(events.router)  # GET /api/v1/events/stream (SSE), POST /token
     app.include_router(recommendations.router)
+    app.include_router(review.router)
 
     log.info(f"ice_api.create_app: env={settings.env}, cors_origins={origins}")
     return app

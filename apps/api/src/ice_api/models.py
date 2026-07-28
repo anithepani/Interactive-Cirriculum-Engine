@@ -7,6 +7,7 @@ from sqlalchemy import (
     JSON,
     Text,
     DateTime,
+    Date,
     ForeignKey,
     Boolean,
     Enum,
@@ -58,6 +59,14 @@ class Verdict(str, enum.Enum):
     partial = "partial"
 
 
+class ReviewFormat(str, enum.Enum):
+    output_prediction = "output_prediction"
+    fill_gap = "fill_gap"
+    spot_bug = "spot_bug"
+    concept_recall = "concept_recall"
+    trace_state = "trace_state"
+    legacy = "legacy"
+
 # ---- Tables ----
 class Tenant(Base):
     __tablename__ = "tenants"
@@ -81,8 +90,10 @@ class User(Base):
     is_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     avatar_url = Column(String(255), nullable=True)
+    xp = Column(Integer, default=0, server_default="0")
     streak_count = Column(Integer, default=0, server_default="0")
     streak_color = Column(String(50), default="emerald", server_default="'emerald'")
+    last_active_date = Column(Date, nullable=True)
     token_version = Column(Integer, default=1, server_default="1")
     created_at = Column(DateTime, server_default=func.now())
     last_login = Column(DateTime, nullable=True)
@@ -151,7 +162,9 @@ class Concept(Base):
     label = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     difficulty = Column(Float, default=1.5)
-    # Remove: embedding, canonical_id (if they don't exist in DB)
+    category = Column(String, nullable=True)
+    review_format = Column(Enum(ReviewFormat), nullable=True)
+    review_payload = Column(JSONB, nullable=True)
     __table_args__ = (Index("ix_concepts_curriculum", "curriculum_id"),)
 
 
@@ -249,6 +262,12 @@ class SkillModel(Base):
     # ``weak_concepts`` is a JSON list surfaced on the progress dashboard.
     difficulty = Column(Integer, nullable=True, server_default="3", default=3)
     weak_concepts = Column(JSON, nullable=True)
+    
+    # Spaced Repetition (SRS) SuperMemo-2 Fields
+    next_review_date = Column(DateTime, nullable=True)
+    srs_interval = Column(Integer, default=0, server_default="0")
+    ease_factor = Column(Float, default=2.5, server_default="2.5")
+    
     last_updated = Column(DateTime, server_default=func.now(), onupdate=func.now())
     __table_args__ = (UniqueConstraint("user_id", "concept_id"),)
 

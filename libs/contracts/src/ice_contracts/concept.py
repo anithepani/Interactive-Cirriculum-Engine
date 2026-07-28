@@ -23,3 +23,6 @@ class Concept(BaseModel):
     taxonomy_id: Optional[str] = Field(
         None, description="Link to Wikidata/CS taxonomy canonical id"
     )
+    category: Optional[str] = Field(None, description="Semantic category (e.g., syntax/mechanism)")
+    review_format: Optional[str] = Field(None, description="The enum format of the review")
+    review_payload: Optional[dict] = Field(None, description="The payload of the review")

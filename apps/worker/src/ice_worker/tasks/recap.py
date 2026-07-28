@@ -324,6 +324,7 @@ Here is the transcript data:
         cmd = ["ffmpeg", "-y"]
         filter_complex = []
         
+        concat_inputs = []
         for i, s in enumerate(selected):
             start_t = max(0, s["start"] - 0.2)
             dur = (s["end"] - s["start"]) + 0.4
@@ -333,31 +334,23 @@ Here is the transcript data:
             
             if has_video:
                 filter_complex.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
-            filter_complex.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
+                filter_complex.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
+                concat_inputs.append(f"[v{i}][a{i}]")
+            else:
+                filter_complex.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
+                concat_inputs.append(f"[a{i}]")
 
-        trans_dur = 1.0
-        v_out = "[v0]" if has_video else ""
-        a_out = "[a0]"
-        
         if len(selected) > 0:
-            current_v_dur = (selected[0]["end"] - selected[0]["start"]) + 0.4
-            
-            for i in range(1, len(selected)):
-                clip_dur = (selected[i]["end"] - selected[i]["start"]) + 0.4
-                offset = max(0, current_v_dur - trans_dur)
+            if has_video:
+                concat_str = "".join(concat_inputs) + f"concat=n={len(selected)}:v=1:a=1[v_out][a_out]"
+                filter_complex.append(concat_str)
+                v_out = "[v_out]"
+                a_out = "[a_out]"
+            else:
+                concat_str = "".join(concat_inputs) + f"concat=n={len(selected)}:v=0:a=1[a_out]"
+                filter_complex.append(concat_str)
+                a_out = "[a_out]"
                 
-                if has_video:
-                    next_v_out = f"[vx{i}]"
-                    # Wipe left mimics a page turning to the next concept
-                    filter_complex.append(f"{v_out}[v{i}]xfade=transition=wipeleft:duration={trans_dur}:offset={offset:.2f}{next_v_out}")
-                    v_out = next_v_out
-                    
-                next_a_out = f"[ax{i}]"
-                filter_complex.append(f"{a_out}[a{i}]acrossfade=d={trans_dur}{next_a_out}")
-                a_out = next_a_out
-                
-                current_v_dur = current_v_dur + clip_dur - trans_dur
-
         if has_video:
             cmd.extend([
                 "-filter_complex", ";".join(filter_complex),

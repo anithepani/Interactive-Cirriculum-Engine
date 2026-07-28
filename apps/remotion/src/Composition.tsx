@@ -2,6 +2,8 @@ import React from 'react';
 import { AbsoluteFill, Sequence, useCurrentFrame, useVideoConfig, spring, Audio, staticFile } from 'remotion';
 import { MainCompProps, SlideData } from './Root';
 import { Highlight, themes } from 'prism-react-renderer';
+import { TransitionSeries, linearTiming } from '@remotion/transitions';
+import { slide } from '@remotion/transitions/slide';
 
 const getBackgroundGradient = (theme?: string) => {
   switch (theme) {
@@ -18,21 +20,23 @@ const getBackgroundGradient = (theme?: string) => {
 };
 
 export const MainComp: React.FC<MainCompProps> = ({ slides }) => {
-  let accumulatedFrames = 0;
-
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
-      {slides.map((slide, i) => {
-        const startFrame = accumulatedFrames;
-        const duration = slide.durationInFrames;
-        accumulatedFrames += duration;
-
-        return (
-          <Sequence key={i} from={startFrame} durationInFrames={duration}>
-            <Slide slide={slide} />
-          </Sequence>
-        );
-      })}
+      <TransitionSeries>
+        {slides.map((slideObj, i) => (
+          <React.Fragment key={i}>
+            <TransitionSeries.Sequence durationInFrames={slideObj.durationInFrames}>
+              <Slide slide={slideObj} />
+            </TransitionSeries.Sequence>
+            {i < slides.length - 1 && (
+              <TransitionSeries.Transition
+                presentation={slide()}
+                timing={linearTiming({ durationInFrames: 15 })}
+              />
+            )}
+          </React.Fragment>
+        ))}
+      </TransitionSeries>
     </AbsoluteFill>
   );
 };

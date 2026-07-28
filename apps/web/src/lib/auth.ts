@@ -7,6 +7,7 @@ export interface AuthUser {
   name: string;
   email: string;
   avatar_url?: string;
+  xp?: number;
   streak_count?: number;
   streak_color?: string;
 }

@@ -26,6 +26,7 @@ Lead: Aryan. Support: Ahmed (code-context from OCR).
 from __future__ import annotations
 
 from ice_exercise_gen.generator import generate_exercises
+from ice_exercise_gen.review import generate_concept_reviews
 
-__all__ = ["generate_exercises"]
+__all__ = ["generate_exercises", "generate_concept_reviews"]
 __version__ = "0.1.0"

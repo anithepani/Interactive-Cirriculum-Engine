@@ -4,7 +4,10 @@ import { useState } from "react";
 import { Film, BookOpen, Sparkles, Video } from "lucide-react";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
+import ConceptGraph from "./ConceptGraph";
+
 interface MediaTabsProps {
+  curriculumId: number;
   recapStatus: "none" | "processing" | "ready" | "failed";
   recapUrl: string | null;
   studyGuideHtml: string | null;
@@ -15,9 +18,10 @@ interface MediaTabsProps {
   onTriggerSignal: () => void;
 }
 
-type TabKey = "signal" | "recap" | "study";
+type TabKey = "signal" | "recap" | "study" | "graph";
 
 export default function MediaTabs({
+  curriculumId,
   recapStatus,
   recapUrl,
   studyGuideHtml,
@@ -32,9 +36,17 @@ export default function MediaTabs({
     { key: "signal", label: "Cinematic Summary", icon: Video },
     { key: "recap", label: "Recap Video", icon: Film },
     { key: "study", label: "Study Guide", icon: BookOpen },
+    { key: "graph", label: "Skill Tree", icon: Sparkles },
   ];
 
   const renderContent = () => {
+    if (active === "graph") {
+      return (
+        <div className="pt-2">
+          <ConceptGraph curriculumId={curriculumId} />
+        </div>
+      );
+    }
     if (active === "signal") {
       if (signalStatus === "none") {
         return (

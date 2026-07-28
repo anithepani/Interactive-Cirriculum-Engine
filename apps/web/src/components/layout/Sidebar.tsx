@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Compass,
+  BrainCircuit,
 } from "lucide-react";
 import { removeTokens } from "@/lib/auth";
 import { useLayoutStore } from "@/lib/store";

@@ -15,24 +15,38 @@ import Link from "next/link";
 // Maps a backend category label (or a raw title) onto the local icon/color
 // palette. Matches the backend's category names first, then falls back to
 // keyword sniffing so the mapping still works for arbitrary titles.
+import { getCurrentUser, AuthUser } from "@/lib/auth";
+import { useEffect } from "react";
+import { Flame, Sparkles, Trophy } from "lucide-react";
+
 const inferCategory = (label: string) => {
   const t = label.toLowerCase();
-  if (t.includes("program") || t.includes("react") || t.includes("python") || t.includes("code") || t.includes("js") || t.includes("html") || t.includes("css") || t.includes("java")) {
-    return { name: "Programming", icon: Code, color: "text-sky-600", bg: "bg-sky-50", fill: "bg-sky-600" };
+  
+  // Helper to check for exact word boundary matches (e.g., matching "ai" but not "detail")
+  const hasWord = (word: string) => new RegExp(`\\b${word}\\b`).test(t);
+  const matchesAny = (words: string[]) => words.some(hasWord);
+
+  if (matchesAny(["program", "programming", "react", "python", "code", "js", "javascript", "html", "css", "java", "c\\+\\+", "cpp", "c#"])) {
+    return { name: "Programming", icon: Code, color: "text-sky-600 dark:text-sky-400", bg: "bg-sky-50 dark:bg-sky-900/20", fill: "bg-sky-600 dark:bg-sky-500" };
   }
-  if (t.includes("data") || t.includes("ai") || t.includes("ml") || t.includes("machine")) {
-    return { name: "Data & AI", icon: Brain, color: "text-rose-600", bg: "bg-rose-50", fill: "bg-rose-600" };
+  if (matchesAny(["data", "ai", "ml", "machine"])) {
+    return { name: "Data & AI", icon: Brain, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", fill: "bg-rose-600 dark:bg-rose-500" };
   }
-  if (t.includes("design") || t.includes("ui") || t.includes("ux") || t.includes("figma") || t.includes("photoshop")) {
-    return { name: "UI/UX Design", icon: Palette, color: "text-fuchsia-600", bg: "bg-fuchsia-50", fill: "bg-fuchsia-600" };
+  if (matchesAny(["design", "ui", "ux", "figma", "photoshop"])) {
+    return { name: "UI/UX Design", icon: Palette, color: "text-fuchsia-600 dark:text-fuchsia-400", bg: "bg-fuchsia-50 dark:bg-fuchsia-900/20", fill: "bg-fuchsia-600 dark:bg-fuchsia-500" };
   }
-  if (t.includes("business") || t.includes("finance") || t.includes("marketing") || t.includes("money") || t.includes("startup")) {
-    return { name: "Business", icon: Briefcase, color: "text-emerald-600", bg: "bg-emerald-50", fill: "bg-emerald-600" };
+  if (matchesAny(["business", "finance", "marketing", "money", "startup"])) {
+    return { name: "Business", icon: Briefcase, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/20", fill: "bg-emerald-600 dark:bg-emerald-500" };
   }
-  return { name: "General Learning", icon: MonitorPlay, color: "text-indigo-600", bg: "bg-indigo-50", fill: "bg-indigo-600" };
+  return { name: "General Learning", icon: MonitorPlay, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/20", fill: "bg-indigo-600 dark:bg-indigo-500" };
 };
 
 export default function ProgressPage() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  useEffect(() => {
+    getCurrentUser().then(setUser);
+  }, []);
+
   const { data, error, isLoading } = useSWR<CurriculumSummary[]>("/api/v1/curricula", authFetcher);
   // Live progress breakdown from the backend (Block D): real hours, exercise
   // counts and concept-weighted categories rather than the old client-side
@@ -77,14 +91,54 @@ export default function ProgressPage() {
     return `conic-gradient(${stops.join(", ")})`;
   }, [stats.categories]);
 
+  // Calculate Level based on XP
+  const userXp = user?.xp || 0;
+  const userLevel = Math.floor(userXp / 100) + 1;
+  const xpForNextLevel = userLevel * 100;
+  const currentLevelProgress = userXp % 100;
+
   return (
     <AppLayout>
       <div className="mx-auto max-w-5xl">
-        <div className="mb-8">
-          <h1 className="font-display text-3xl font-bold text-ink">Progress Report</h1>
-          <p className="mt-2 text-ink-soft">
-            Track your skill acquisition and learning categories.
-          </p>
+        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <h1 className="font-display text-3xl font-bold text-ink flex items-center gap-2">
+              Progress Report
+            </h1>
+            <p className="mt-2 text-ink-soft">
+              Track your skill acquisition and learning categories.
+            </p>
+          </div>
+          
+          {user && (
+            <div className="flex bg-white dark:bg-zinc-900 border border-ink/10 rounded-[1.5rem] p-1.5 shadow-sm">
+              <div className="flex flex-col items-center justify-center px-6 py-2 border-r border-ink/10">
+                <div className="flex items-center gap-1.5 text-orange-500 font-display font-bold text-2xl">
+                  <Flame className="w-5 h-5" />
+                  {user.streak_count || 0}
+                </div>
+                <div className="text-[10px] font-semibold text-ink-soft uppercase tracking-wider mt-0.5">Day Streak</div>
+              </div>
+              
+              <div className="flex flex-col px-6 py-2 min-w-[140px]">
+                <div className="flex items-center justify-between gap-4 mb-1.5">
+                  <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 font-display font-bold text-lg">
+                    <Trophy className="w-4 h-4" />
+                    Lvl {userLevel}
+                  </div>
+                  <div className="text-xs font-bold text-ink-soft">
+                    {userXp} <span className="font-medium text-ink-soft/70">/ {xpForNextLevel} XP</span>
+                  </div>
+                </div>
+                <div className="h-2 bg-ink/5 dark:bg-ink/10 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-indigo-500 rounded-full transition-all duration-1000 ease-out" 
+                    style={{ width: `${(currentLevelProgress / 100) * 100}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {isLoading ? (

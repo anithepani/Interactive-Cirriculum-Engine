@@ -292,6 +292,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
 
     # ---- M3: extract visuals ----
     await publish_progress("Extracting visual content & code snippets...")
+    visual_items = []
     try:
         from ice_ingestion import extract_visuals
 
@@ -302,7 +303,6 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         # )
         
         # Disabled per user request to test generation without OCR
-        visual_items = []
     except Exception as e:
         logger.warning(f"M3 Visual Extraction failed: {e}. Falling back to transcript-only mode.")
 
@@ -333,8 +333,19 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     # ---- M5: concepts ----
     await publish_progress("Building Concept Knowledge Graph...")
     from ice_concept_graph import extract_concepts_and_edges
+    from ice_exercise_gen import generate_concept_reviews
 
     graph = extract_concepts_and_edges(segments)
+    
+    await publish_progress("Generating concept reviews...")
+    # Reconstruct a compact transcript string to ground the review payload
+    transcript_text = " ".join(
+        str(r.get("text") or "").strip()
+        for r in (transcript.get("segments") or [])
+        if str(r.get("text") or "").strip()
+    )
+    graph["concepts"] = generate_concept_reviews(graph.get("concepts", []), transcript_text)
+
     concept_map = await persist.persist_concepts(curriculum_id, tenant_id, graph)
     await persist.persist_edges(tenant_id, graph, concept_map)
 

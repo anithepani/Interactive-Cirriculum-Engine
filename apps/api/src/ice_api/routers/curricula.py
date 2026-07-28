@@ -25,6 +25,7 @@ from ice_api.models import (
     Tenant,
     Segment,
     Concept,
+    ConceptEdge,
     Checkpoint,
     Exercise,
     User,
@@ -821,6 +822,33 @@ async def ping():
     return {"ping": "pong"}
 
 
+async def _award_xp_and_streak(session: AsyncSession, user_id: int) -> Dict[str, Any]:
+    from datetime import date, timedelta
+    stmt = select(User).where(User.id == user_id)
+    user = (await session.execute(stmt)).scalar_one_or_none()
+    if not user:
+        return {}
+    
+    xp_gained = 10
+    user.xp = (user.xp or 0) + xp_gained
+    
+    today = date.today()
+    if user.last_active_date == today:
+        # Already active today
+        pass
+    elif user.last_active_date == today - timedelta(days=1):
+        # Active yesterday, increase streak
+        user.streak_count = (user.streak_count or 0) + 1
+        user.last_active_date = today
+    else:
+        # Streak broken or first time
+        user.streak_count = 1
+        user.last_active_date = today
+    
+    await session.flush()
+    return {"xp_gained": xp_gained, "total_xp": user.xp, "streak": user.streak_count}
+
+
 @router.post("/evaluate")
 async def evaluate(
     payload: EvaluateRequest,
@@ -907,7 +935,12 @@ async def evaluate(
             session, current_user.id, cp.id, passed, answer
         )
 
-        return {"status": "ok", "passed": passed, **extra}
+        gamification = {}
+        if passed:
+            gamification = await _award_xp_and_streak(session, current_user.id)
+            await session.commit()
+
+        return {"status": "ok", "passed": passed, **extra, **gamification}
 
     except HTTPException:
         raise
@@ -1070,6 +1103,62 @@ async def post_progress(
         logger.error(f"post_progress error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to save progress")
 
+
+@router.get("/{curriculum_id}/graph", response_model=Dict[str, Any])
+async def get_curriculum_graph(
+    curriculum_id: int,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Returns the concept nodes and edges for rendering a dependency graph."""
+    try:
+        set_tenant_context(str(current_user.tenant_id))
+
+        # Check curriculum exists
+        stmt = select(Curriculum).where(Curriculum.id == curriculum_id)
+        result = await session.execute(stmt)
+        if not result.scalar_one_or_none():
+            raise HTTPException(status_code=404, detail="Curriculum not found")
+
+        # Fetch concepts
+        conc_stmt = select(Concept).where(Concept.curriculum_id == curriculum_id)
+        conc_result = await session.execute(conc_stmt)
+        concepts = conc_result.scalars().all()
+        concept_ids = [c.id for c in concepts]
+
+        # Fetch edges
+        edges = []
+        if concept_ids:
+            edge_stmt = select(ConceptEdge).where(
+                (ConceptEdge.source_id.in_(concept_ids)) | (ConceptEdge.target_id.in_(concept_ids))
+            )
+            edge_result = await session.execute(edge_stmt)
+            edges = edge_result.scalars().all()
+
+        return {
+            "nodes": [
+                {
+                    "id": c.id,
+                    "label": c.label,
+                    "difficulty": c.difficulty,
+                }
+                for c in concepts
+            ],
+            "edges": [
+                {
+                    "id": e.id,
+                    "source_id": e.source_id,
+                    "target_id": e.target_id,
+                    "relation": e.relation,
+                }
+                for e in edges
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching graph: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to fetch graph")
 
 @router.get("/{curriculum_id}", response_model=Dict[str, Any])
 async def get_curriculum(

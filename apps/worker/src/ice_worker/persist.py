@@ -205,6 +205,9 @@ async def persist_concepts(
                 label=c.get("label") or c.get("id") or "concept",
                 description=c.get("description"),
                 difficulty=float(c.get("difficulty", 1.5)),
+                category=c.get("category", "general"),
+                review_format=c.get("review_format"),
+                review_payload=c.get("review_payload"),
             )
             session.add(row)
             await session.flush()

@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getCurrentUser, removeTokens, type AuthUser } from "@/lib/auth";
 import { useLayoutStore } from "@/lib/store";
-import { Bell, Search, Mail, Moon, Sun, LifeBuoy, Flame, Settings, LogOut } from "lucide-react";
+import { Bell, Search, Mail, Moon, Sun, LifeBuoy, Flame, Settings, LogOut, Sparkles } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useThemeMode } from "@/components/ThemeProviders";
 import { useNotifications } from "@/components/NotificationsProvider";
@@ -76,6 +76,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
           {/* Right side icons and profile */}
           <div className="flex items-center gap-6">
+            {user && (
+              <div className="hidden sm:flex items-center gap-4 border-r border-ink/10 pr-6 mr-[-6px]">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-orange-50 dark:bg-orange-950/30 text-orange-600 font-bold text-sm shadow-sm transition hover:scale-105 cursor-default" title={`${user.streak_count || 0} Day Streak`}>
+                  <Flame className="w-4 h-4 fill-orange-500" />
+                  {user.streak_count || 0}
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 font-bold text-sm shadow-sm transition hover:scale-105 cursor-default" title={`${user.xp || 0} Total XP`}>
+                  <Sparkles className="w-4 h-4 fill-indigo-500" />
+                  {user.xp || 0} XP
+                </div>
+              </div>
+            )}
+            
             <div className="flex gap-3">
               <button
                 onClick={toggleColorMode}

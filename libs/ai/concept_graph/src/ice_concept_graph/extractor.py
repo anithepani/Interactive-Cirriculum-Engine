@@ -95,9 +95,12 @@ def _enrich_nodes(concepts: list[str], llm) -> list[dict]:
         "Extract ONLY core technical/programming concepts. No filler words or "
         "pronouns.\n\n"
         "For each of the following programming/tutorial concepts, write a short "
-        "1-sentence description and assign a difficulty rating from 1 (beginner) "
-        "to 5 (advanced). Return a JSON array where each element has fields: "
-        '"label" (the original concept), "description" (str), "difficulty" (int 1-5).\n\n'
+        "1-sentence description, assign a difficulty rating from 1 (beginner) "
+        "to 5 (advanced), and determine its category. "
+        "Category MUST be one of: 'syntax/mechanism', 'algorithmic complexity', "
+        "'loops/recursion', 'common-mistake-prone topics', or 'general'.\n\n"
+        "Return a JSON array where each element has fields: "
+        '"label" (the original concept), "description" (str), "difficulty" (int 1-5), and "category" (str).\n\n'
         f"Concepts:\n{concept_list}"
     )
     raw = llm.complete(prompt, tier="high_value")
@@ -110,6 +113,7 @@ def _enrich_nodes(concepts: list[str], llm) -> list[dict]:
                 "label": c,
                 "description": c,
                 "difficulty": 3,
+                "category": "general",
             }
             for c in concepts
         ]
@@ -121,10 +125,14 @@ def _enrich_nodes(concepts: list[str], llm) -> list[dict]:
             label_map[str(item["label"]).strip().lower()] = item
 
     nodes: list[dict] = []
+    valid_categories = {"syntax/mechanism", "algorithmic complexity", "loops/recursion", "common-mistake-prone topics", "general"}
     for c in concepts:
         item = label_map.get(c.lower(), {})
         desc = str(item.get("description", c)).strip() or c
         diff = item.get("difficulty", 3)
+        cat = str(item.get("category", "general")).strip().lower()
+        if cat not in valid_categories:
+            cat = "general"
         try:
             diff = max(1, min(5, int(diff)))
         except (ValueError, TypeError):
@@ -135,6 +143,7 @@ def _enrich_nodes(concepts: list[str], llm) -> list[dict]:
                 "label": c,
                 "description": desc,
                 "difficulty": diff,
+                "category": cat,
             }
         )
     return nodes
