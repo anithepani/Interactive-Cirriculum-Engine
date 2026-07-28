@@ -42,10 +42,13 @@ celery_app.conf.update(
 
 # Upstash (and other TLS redis providers) use rediss://, which requires explicit
 # ssl_cert_reqs on both broker and result backend or celery refuses to start.
+# redis-py expects the actual ssl module constant (int), not the string name.
+import ssl  # noqa: E402
+
 if settings.celery.broker_url.startswith("rediss://"):
-    celery_app.conf.update(broker_use_ssl={"ssl_cert_reqs": "CERT_REQUIRED"})
+    celery_app.conf.update(broker_use_ssl={"ssl_cert_reqs": ssl.CERT_REQUIRED})
 if settings.celery.result_backend.startswith("rediss://"):
-    celery_app.conf.update(redis_backend_use_ssl={"ssl_cert_reqs": "CERT_REQUIRED"})
+    celery_app.conf.update(redis_backend_use_ssl={"ssl_cert_reqs": ssl.CERT_REQUIRED})
 
 # ─── Explicit task registration ──────────────────────────────────────────────
 # Even if autodiscover fails, these imports force the task definitions to be
