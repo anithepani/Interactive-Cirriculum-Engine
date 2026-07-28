@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Video, RefreshCw, AlertTriangle, Trash2, X, ChevronRight, BookOpen, Clock, Activity, Flame } from "lucide-react";
+import { Plus, Video, RefreshCw, AlertTriangle, Trash2, X, ChevronRight, BookOpen, Clock, Activity, Flame, CheckCircle } from "lucide-react";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import CurriculumCard from "@/components/CurriculumCard";
 import AppLayout from "@/components/layout/AppLayout";
@@ -198,21 +198,31 @@ function EmptyState() {
     <motion.div
       initial={{ opacity: 0, scale: 0.97 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="flex flex-col items-center justify-center gap-6 rounded-[2rem] border border-ink/10 bg-white py-16 px-8 text-center shadow-sm"
+      className="flex flex-col items-center justify-center gap-6 rounded-[2rem] border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/50 py-16 px-8 text-center shadow-lg relative overflow-hidden"
     >
+      <div className="absolute -top-12 -right-12 w-32 h-32 bg-indigo-500/10 blur-[40px] rounded-full pointer-events-none" />
+      <div className="absolute -bottom-12 -left-12 w-32 h-32 bg-purple-500/10 blur-[40px] rounded-full pointer-events-none" />
+
       <motion.div
         animate={{ y: [0, -8, 0] }}
         transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
-        className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500"
+        className="flex h-20 w-20 items-center justify-center rounded-[2rem] bg-indigo-100 text-indigo-600 shadow-xl shadow-indigo-200/50 relative z-10"
       >
-        <Video className="h-8 w-8" />
+        <Video className="h-10 w-10" />
       </motion.div>
-      <div className="max-w-xs space-y-2">
-        <p className="font-display text-lg font-bold text-ink">No curricula yet</p>
+      <div className="max-w-sm space-y-3 relative z-10">
+        <p className="font-display text-2xl font-bold text-ink tracking-tight">Your Curriculum Awaits</p>
         <p className="text-sm leading-relaxed text-ink-soft">
-          Upload your first video to get started.
+          You don't have any generated curricula yet. Paste a YouTube link or upload a video to create your first interactive learning experience!
         </p>
       </div>
+      <Link
+        href="/upload"
+        className="mt-2 inline-flex items-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-bold text-white shadow-xl shadow-indigo-600/30 transition hover:scale-105 hover:bg-indigo-700 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 relative z-10"
+      >
+        <Plus className="h-5 w-5" />
+        Create Curriculum
+      </Link>
     </motion.div>
   );
 }
@@ -314,10 +324,50 @@ export default function DashboardPage() {
     getCurrentUser().then(setUser);
   };
 
+  const [progressMessage, setProgressMessage] = useState<string | null>(null);
+
   useEffect(() => {
     fetchUser();
     window.addEventListener("userUpdated", fetchUser);
-    return () => window.removeEventListener("userUpdated", fetchUser);
+    
+    let es: EventSource | null = null;
+    let timer: NodeJS.Timeout;
+
+    const connectSSE = async () => {
+      try {
+        const res = await authFetch("/api/v1/events/token", { method: "POST" });
+        if (!res.ok) return;
+        const { token } = await res.json();
+        
+        es = new EventSource(`/api/v1/events/stream?token=${encodeURIComponent(token)}`);
+        
+        es.addEventListener("notification", (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "curriculum_progress") {
+              setProgressMessage(data.message);
+              clearTimeout(timer);
+              if (data.message !== "Curriculum is ready!") {
+                 timer = setTimeout(() => setProgressMessage(null), 15000);
+              } else {
+                 timer = setTimeout(() => {
+                    setProgressMessage(null);
+                    mutate();
+                 }, 3000);
+              }
+            }
+          } catch (e) {}
+        });
+      } catch (e) {}
+    };
+    
+    connectSSE();
+
+    return () => {
+      window.removeEventListener("userUpdated", fetchUser);
+      if (es) es.close();
+      clearTimeout(timer);
+    };
   }, []);
 
   const { data, error, isLoading, isValidating, mutate } =
@@ -365,6 +415,31 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-8 xl:col-span-2">
           
           <HeroBanner user={user} />
+
+          <AnimatePresence>
+            {progressMessage && (
+              <motion.div
+                initial={{ opacity: 0, y: -20, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 shadow-sm flex items-center justify-between"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-indigo-600 shadow-sm">
+                    {progressMessage === "Curriculum is ready!" ? (
+                      <CheckCircle className="h-5 w-5 text-emerald-500" />
+                    ) : (
+                      <RefreshCw className="h-5 w-5 animate-spin" />
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-indigo-900">AI Processing Curriculum</h3>
+                    <p className="text-sm text-indigo-700/80 mt-0.5">{progressMessage}</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           
           <StatsRow data={data} stats={stats} />
           
