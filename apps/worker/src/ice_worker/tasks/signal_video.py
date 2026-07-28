@@ -228,9 +228,14 @@ Transcript:
         final_video_path = os.path.join(tmpdir, "signal_video.mp4")
         
         # 4. Run remotion render (failures must surface a status + full log)
+        # Added concurrency and quality flags to dramatically speed up cinematic video rendering
         render_cmd = [
             "npx", "remotion", "render", "src/index.ts", "MainComp", final_video_path,
-            "--props", props_path
+            "--props", props_path,
+            "--concurrency", "100%",
+            "--jpeg-quality", "70",
+            "--pixel-format", "yuv420p",
+            "--log", "info"
         ]
         
         render_cmd_str = " ".join(render_cmd)
