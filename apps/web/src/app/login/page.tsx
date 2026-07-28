@@ -19,6 +19,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm({
@@ -41,8 +42,11 @@ export default function LoginPage() {
         throw new Error(result.detail || "Login failed");
       }
       setTokens(result.access_token, result.refresh_token);
-      const redirect = new URLSearchParams(window.location.search).get("redirect");
-      router.push(redirect || "/dashboard");
+      setSuccessMsg("Successfully logged in! Redirecting...");
+      setTimeout(() => {
+        const redirect = new URLSearchParams(window.location.search).get("redirect");
+        router.push(redirect || "/dashboard");
+      }, 1500);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -89,12 +93,19 @@ export default function LoginPage() {
           <p className="text-sm text-ink-soft mt-1">Log in to continue your learning journey</p>
         </div>
 
-        {error && (
-          <div className="mb-4 p-3 bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl flex items-center gap-3 text-sm text-rose-600 dark:text-rose-400">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <p>{error}</p>
-          </div>
-        )}
+          {error && (
+            <div className="mb-6 flex items-center gap-3 rounded-2xl bg-rose-500/10 px-4 py-3 text-rose-400 border border-rose-500/20">
+              <AlertCircle className="h-5 w-5 shrink-0" />
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
+
+          {successMsg && (
+            <div className="mb-6 flex items-center gap-3 rounded-2xl bg-emerald-500/10 px-4 py-3 text-emerald-400 border border-emerald-500/20">
+              <Sparkles className="h-5 w-5 shrink-0" />
+              <p className="text-sm">{successMsg}</p>
+            </div>
+          )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
           <div>
@@ -114,6 +125,9 @@ export default function LoginPage() {
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-sm font-semibold text-ink">Password</label>
+              <Link href="/forgot-password" className="text-xs font-semibold text-indigo-600 hover:text-indigo-500 hover:underline">
+                Forgot password?
+              </Link>
             </div>
             <div className="relative">
               <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-soft/50" />
