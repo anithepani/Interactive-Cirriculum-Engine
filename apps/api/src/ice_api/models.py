@@ -163,7 +163,7 @@ class Concept(Base):
     description = Column(Text, nullable=True)
     difficulty = Column(Float, default=1.5)
     category = Column(String, nullable=True)
-    review_format = Column(Enum(ReviewFormat), nullable=True)
+    review_format = Column(Enum(ReviewFormat, native_enum=False), nullable=True)
     review_payload = Column(JSONB, nullable=True)
     __table_args__ = (Index("ix_concepts_curriculum", "curriculum_id"),)
 
