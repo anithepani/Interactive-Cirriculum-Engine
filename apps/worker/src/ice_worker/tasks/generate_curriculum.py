@@ -76,13 +76,8 @@ def _is_upload_ref(video_ref: str) -> bool:
     return video_ref.startswith("tenants/") and "/curricula/" in video_ref
 
 
-async def _get_curriculum_difficulty(curriculum_id: str) -> str:
-    """Read the learner-selected difficulty off the curriculum row.
-
-    Returns the stored value ("easy" | "medium" | "hard") or "medium" when the
-    row/column is missing (legacy DBs / pre-migration curricula). Never raises —
-    difficulty is a tuning knob and must not break generation.
-    """
+async def _get_curriculum_details(curriculum_id: str) -> tuple[str, int | None]:
+    """Read learner-selected difficulty and user_id off the curriculum row."""
     try:
         from ice_api.models import Curriculum
         from ice_shared.db import get_session_factory
@@ -91,13 +86,15 @@ async def _get_curriculum_difficulty(curriculum_id: str) -> str:
         async with factory() as session:
             c = await session.get(Curriculum, int(curriculum_id))
             value = str(getattr(c, "difficulty", None) or "medium").strip().lower()
-            return value if value in ("easy", "medium", "hard") else "medium"
+            diff = value if value in ("easy", "medium", "hard") else "medium"
+            uid = c.user_id if c else None
+            return diff, uid
     except Exception:
         logger.warning(
-            "could not read difficulty for curriculum %s; defaulting to medium",
+            "could not read details for curriculum %s; defaulting to medium/none",
             curriculum_id,
         )
-        return "medium"
+        return "medium", None
 
 
 def _build_segment_texts(transcript: dict, segments: list[dict]) -> dict[str, str]:
@@ -189,27 +186,40 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     await _ensure_tables()
     await persist.set_curriculum_status(curriculum_id, tenant_id, "processing")
 
-    # Phase 4: read the learner-selected difficulty off the curriculum row so
-    # it can tune checkpoint spacing (M6) + exercise numeric difficulty (M7).
-    # Best-effort with a "medium" fallback so a missing column / legacy row
-    # never breaks the pipeline (zero-regression).
-    difficulty = await _get_curriculum_difficulty(curriculum_id)
+    # Fetch curriculum details
+    difficulty, user_id = await _get_curriculum_details(curriculum_id)
+
+    async def publish_progress(message: str) -> None:
+        """Publish a live progress message to the user via Redis SSE stream."""
+        if not user_id:
+            return
+        try:
+            import redis.asyncio as aioredis
+            r = aioredis.Redis.from_url(settings.redis.url)
+            channel = f"ice:notifications:{user_id}"
+            payload = json.dumps({
+                "type": "curriculum_progress",
+                "curriculum_id": curriculum_id,
+                "message": message
+            })
+            await r.publish(channel, payload)
+            await r.aclose()
+        except Exception as e:
+            logger.warning("failed to publish progress: %s", e)
+
+    await publish_progress("Initializing AI pipeline...")
 
     # ---- M1: ingest ----
-    # Two supported sources, routed by the shape of ``video_ref``:
-    #   • YouTube URL  → ingest_video (yt-dlp + ffmpeg + caption harvest)
-    #   • upload S3 key → ingest_upload (download from MinIO + ffmpeg)
-    # Anything else (a bare filename, an unknown URL) can't be processed, so we
-    # fail fast with a clear, user-facing reason rather than handing garbage to
-    # yt-dlp and surfacing an opaque extractor error.
     if _is_youtube_ref(video_ref):
         from ice_ingestion import ingest_video
-
+        
+        await publish_progress("Downloading YouTube video...")
         ingest = ingest_video(video_ref, tenant_id, curriculum_id)
         source_type = "youtube"
     elif _is_upload_ref(video_ref):
         from ice_ingestion import ingest_upload
 
+        await publish_progress("Processing uploaded video...")
         ingest = ingest_upload(video_ref, tenant_id, curriculum_id)
         source_type = "upload"
     else:
@@ -241,9 +251,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     video_path = ingest["video_path"]
 
     # ---- M2: transcribe ----
-    # Caption harvesting (Block F): if M1 already produced a transcript from the
-    # video's existing YouTube captions, reuse it and skip Whisper ASR entirely
-    # (faster + cheaper). Otherwise fall back to faster-whisper as before.
+    await publish_progress("Extracting speech and transcribing...")
     caption_transcript = ingest.get("caption_transcript")
     if caption_transcript and caption_transcript.get("segments"):
         transcript = caption_transcript
@@ -282,15 +290,19 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     with contextlib.suppress(OSError):
         os.remove(audio_path)
 
-    # ---- M3: extract visuals (fallback to transcript-only on failure) ----
-    visual_items = []
+    # ---- M3: extract visuals ----
+    await publish_progress("Extracting visual content & code snippets...")
     try:
-        from ice_vision import extract_visuals
+        from ice_ingestion import extract_visuals
+
         loop = asyncio.get_running_loop()
-        visual_items = await loop.run_in_executor(
-            None,
-            lambda: extract_visuals(video_path, extract_rate_sec=settings.vision.extract_rate_sec)
-        )
+        # visual_items = await loop.run_in_executor(
+        #     None,
+        #     lambda: extract_visuals(video_path, extract_rate_sec=settings.vision.extract_rate_sec)
+        # )
+        
+        # Disabled per user request to test generation without OCR
+        visual_items = []
     except Exception as e:
         logger.warning(f"M3 Visual Extraction failed: {e}. Falling back to transcript-only mode.")
 
@@ -318,7 +330,8 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     segments = segment_transcript(transcript, visual_items=visual_items)
     seg_map = await persist.persist_segments(curriculum_id, tenant_id, segments)
 
-    # ---- M5: concept graph ----
+    # ---- M5: concepts ----
+    await publish_progress("Building Concept Knowledge Graph...")
     from ice_concept_graph import extract_concepts_and_edges
 
     graph = extract_concepts_and_edges(segments)
@@ -351,7 +364,8 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         curriculum_id,
     )
 
-    # ---- M6: place checkpoints ----
+    # ---- M6: checkpoints ----
+    await publish_progress("Placing interactive checkpoints...")
     from ice_checkpoints import place_checkpoints
 
     # Phase 5 grounding guarantee: build a {segment_id: code} map from the M3
@@ -374,7 +388,8 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         curriculum_id, tenant_id, checkpoints, seg_map, concept_map
     )
 
-    # ---- M7: generate exercises ----
+    # ---- M7: exercises ----
+    await publish_progress("Generating interactive exercises...")
     from ice_exercise_gen import generate_exercises
 
     # Feed the instructor's on-screen code (M3 vision OCR) into M7 so coding/
@@ -417,6 +432,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         await persist.persist_tests(tenant_id, exercises, ex_map)
 
     await persist.set_curriculum_status(curriculum_id, tenant_id, "ready", ready=True)
+    await publish_progress("Curriculum is ready!")
     logger.info("curriculum %s ready", curriculum_id)
 
     # ── Auto-trigger cinematic summary (signal video) ──────────────────────────
