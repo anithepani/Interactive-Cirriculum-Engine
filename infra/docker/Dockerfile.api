@@ -33,7 +33,7 @@ COPY apps/worker ./apps/worker
 COPY libs ./libs
 COPY db ./db
 
-# Install workspace packages into the venv (uv run target), no-deps (already synced).
-RUN uv pip install --no-deps -p /opt/ice-venv ./libs/contracts ./libs/shared ./apps/api ./apps/worker
+# Install workspace packages (with deps) into the venv that uv run uses.
+RUN uv pip install -p /opt/ice-venv ./libs/contracts ./libs/shared ./apps/api ./apps/worker
 
 CMD ["uv", "run", "uvicorn", "ice_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
