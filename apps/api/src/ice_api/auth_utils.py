@@ -88,7 +88,7 @@ async def get_current_user(
     set_tenant_context(str(user.tenant_id))
     if session.bind.dialect.name == "postgresql":
         await session.execute(
-            text("SET LOCAL app.tenant_id = :tid"),
+            text("SELECT set_config('app.tenant_id', :tid, true)"),
             {"tid": str(user.tenant_id)},
         )
     return user
