@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import uuid
 """Async ORM persistence for the AI pipeline (worker side).
 
 Maps the dict outputs of the AI libs (M4-M8) onto the ``ice_api.models`` ORM
@@ -9,7 +12,6 @@ All functions reuse ``ice_shared.db`` (RLS-aware async sessions). On SQLite
 dev the RLS branch is a no-op; on Postgres the tenant GUC is set via
 ``set_tenant_context`` before the session opens.
 """
-from __future__ import annotations
 
 import asyncio
 import json
@@ -54,7 +56,7 @@ def _ex_type(value: str) -> ExerciseType:
     return ExerciseType(value)
 
 
-def _publish_notification(user_id: int, payload: dict[str, Any]) -> None:
+def _publish_notification(user_id: uuid.UUID, payload: dict[str, Any]) -> None:
     """Publish a notification event to Redis pub/sub (sync; run via to_thread).
 
     Used by ``set_curriculum_status`` to push real-time ``ready``/``failed``
@@ -77,7 +79,7 @@ async def set_curriculum_status(
     set_tenant_context(str(tenant_id))
     factory = get_session_factory()
     async with factory() as session:
-        c = await session.get(Curriculum, int(curriculum_id))
+        c = await session.get(Curriculum, curriculum_id)
         if c is None:
             logger.error("curriculum %s not found", curriculum_id)
             return
@@ -93,21 +95,21 @@ async def set_curriculum_status(
                 else f"Your curriculum '{c.title}' failed to generate."
             )
             payload = {
-                "curriculum_id": int(c.id),
+                "curriculum_id": str(c.id),
                 "status": status,
                 "title": c.title,
                 "ready_at": c.ready_at.isoformat() if c.ready_at else None,
             }
             session.add(
                 Notification(
-                    user_id=int(c.user_id),
-                    curriculum_id=int(c.id),
+                    user_id=str(c.user_id),
+                    curriculum_id=str(c.id),
                     type=ntype,
                     title=title,
                     payload=payload,
                 )
             )
-            pub = (int(c.user_id), {"type": ntype, "title": title, **payload})
+            pub = (str(c.user_id), {"type": ntype, "title": title, **payload})
         await session.commit()
     if pub is not None:
         await asyncio.to_thread(_publish_notification, pub[0], pub[1])
@@ -126,7 +128,7 @@ async def update_curriculum_meta(
     set_tenant_context(str(tenant_id))
     factory = get_session_factory()
     async with factory() as session:
-        c = await session.get(Curriculum, int(curriculum_id))
+        c = await session.get(Curriculum, curriculum_id)
         if c is None:
             return
         if title is not None:
@@ -153,8 +155,8 @@ async def save_artifact(
     factory = get_session_factory()
     async with factory() as session:
         row = Artifact(
-            tenant_id=int(tenant_id),
-            curriculum_id=int(curriculum_id),
+            tenant_id=tenant_id,
+            curriculum_id=curriculum_id,
             kind=kind,
             storage_uri=storage_uri,
             meta=meta or {},
@@ -165,15 +167,17 @@ async def save_artifact(
 
 async def persist_segments(
     curriculum_id: Any, tenant_id: str, segments: list[dict[str, Any]]
-) -> dict[str, int]:
-    """Insert Segment rows; return {segment_id(str): orm_id(int)}."""
+) -> dict[str, str]:
+    """Insert Segment rows; return {segment_id(str): orm_id(str)}."""
     set_tenant_context(str(tenant_id))
     factory = get_session_factory()
-    seg_map: dict[str, int] = {}
+    seg_map: dict[str, str] = {}
     async with factory() as session:
         for seg in segments:
+            new_id = str(uuid.uuid4())
             row = Segment(
-                curriculum_id=int(curriculum_id),
+                id=new_id,
+                curriculum_id=curriculum_id,
                 start_time=seg.get("start"),
                 end_time=seg.get("end"),
                 title=seg.get("title"),
@@ -184,7 +188,7 @@ async def persist_segments(
             )
             session.add(row)
             await session.flush()
-            seg_map[str(seg["id"])] = int(row.id)
+            seg_map[str(seg["id"])] = new_id
         await session.commit()
     logger.info("persisted %d segments", len(seg_map))
     return seg_map
@@ -192,16 +196,18 @@ async def persist_segments(
 
 async def persist_concepts(
     curriculum_id: Any, tenant_id: str, graph: dict[str, Any]
-) -> dict[str, int]:
+) -> dict[str, str]:
     """Insert Concept rows; return {concept_slug: orm_id}."""
     set_tenant_context(str(tenant_id))
     factory = get_session_factory()
-    concept_map: dict[str, int] = {}
+    concept_map: dict[str, str] = {}
     concepts = graph.get("concepts", []) if isinstance(graph, dict) else []
     async with factory() as session:
         for c in concepts:
+            new_id = str(uuid.uuid4())
             row = Concept(
-                curriculum_id=int(curriculum_id),
+                id=new_id,
+                curriculum_id=curriculum_id,
                 label=c.get("label") or c.get("id") or "concept",
                 description=c.get("description"),
                 difficulty=float(c.get("difficulty", 1.5)),
@@ -211,14 +217,14 @@ async def persist_concepts(
             )
             session.add(row)
             await session.flush()
-            concept_map[str(c["id"])] = int(row.id)
+            concept_map[str(c["id"])] = new_id
         await session.commit()
     logger.info("persisted %d concepts", len(concept_map))
     return concept_map
 
 
 async def persist_edges(
-    tenant_id: str, graph: dict[str, Any], concept_map: dict[str, int]
+    tenant_id: str, graph: dict[str, Any], concept_map: dict[str, str]
 ) -> None:
     set_tenant_context(str(tenant_id))
     factory = get_session_factory()
@@ -244,8 +250,8 @@ async def persist_checkpoints(
     curriculum_id: Any,
     tenant_id: str,
     checkpoints: list[dict[str, Any]],
-    seg_map: dict[str, int],
-    concept_map: dict[str, int],
+    seg_map: dict[str, str],
+    concept_map: dict[str, str],
 ) -> dict[str, int]:
     """Insert Checkpoint rows; return {checkpoint_slug: orm_id}."""
     set_tenant_context(str(tenant_id))
@@ -254,7 +260,7 @@ async def persist_checkpoints(
     async with factory() as session:
         for cp in checkpoints:
             row = Checkpoint(
-                curriculum_id=int(curriculum_id),
+                curriculum_id=curriculum_id,
                 segment_id=seg_map.get(str(cp.get("segment_id"))),
                 concept_id=concept_map.get(str(cp.get("concept_id"))),
                 ts=float(cp.get("ts", 0.0)),
@@ -271,7 +277,7 @@ async def persist_checkpoints(
 
 async def persist_exercises(
     tenant_id: str, exercises: list[dict[str, Any]], cp_map: dict[str, int]
-) -> dict[str, int]:
+) -> dict[str, str]:
     """Insert Exercise rows; return {exercise_id(str): orm_id}.
 
     The type-specific payload (mcq/coding/debug/conceptual) is stored as JSON
@@ -279,7 +285,7 @@ async def persist_exercises(
     """
     set_tenant_context(str(tenant_id))
     factory = get_session_factory()
-    ex_map: dict[str, int] = {}
+    ex_map: dict[str, str] = {}
     async with factory() as session:
         for ex in exercises:
             cp_slug = _parse_cp_id(str(ex.get("id", "")))
@@ -311,7 +317,10 @@ async def persist_exercises(
                     if etype.value == "debug" and sub.get("fixed_code"):
                         payload.setdefault("reference_solution", sub["fixed_code"])
                     break
+            
+            new_id = str(uuid.uuid4())
             row = Exercise(
+                id=new_id,
                 checkpoint_id=cp_map.get(cp_slug),
                 type=etype,
                 payload=payload,
@@ -320,7 +329,7 @@ async def persist_exercises(
             )
             session.add(row)
             await session.flush()
-            ex_map[str(ex["id"])] = int(row.id)
+            ex_map[str(ex["id"])] = new_id
         await session.commit()
     logger.info("persisted %d exercises", len(ex_map))
     return ex_map
@@ -329,7 +338,7 @@ async def persist_exercises(
 async def persist_tests(
     tenant_id: str,
     exercises: list[dict[str, Any]],
-    ex_map: dict[str, int],
+    ex_map: dict[str, str],
 ) -> None:
     """For each coding exercise, run M8 and persist Test rows.
 

@@ -11,11 +11,12 @@ import re
 import traceback
 from difflib import SequenceMatcher
 from typing import List, Optional, Dict, Any
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
-from pydantic import BaseModel
+from pydantic import BaseModel, AnyUrl
 
 from ice_shared.db import get_session, set_tenant_context
 from ice_api.auth_utils import get_current_user
@@ -292,7 +293,7 @@ _WEAK_THRESHOLD = 0.5
 
 async def _update_skill_model(
     session: AsyncSession,
-    user_id: int,
+    user_id: uuid.UUID,
     cp: Checkpoint,
     exercise: Optional[Exercise],
     passed: bool,
@@ -351,7 +352,7 @@ async def _update_skill_model(
 
 
 async def _get_checkpoint_attempt(
-    session: AsyncSession, user_id: int, checkpoint_id: int
+    session: AsyncSession, user_id: uuid.UUID, checkpoint_id: int
 ):
     """Return the learner's persisted CheckpointAttempt row, or None."""
     from ice_api.models import CheckpointAttempt
@@ -365,7 +366,7 @@ async def _get_checkpoint_attempt(
 
 async def _record_checkpoint_attempt(
     session: AsyncSession,
-    user_id: int,
+    user_id: uuid.UUID,
     checkpoint_id: int,
     passed: bool,
     answer: str,
@@ -407,7 +408,7 @@ def _normalise_difficulty(value: Optional[str]) -> str:
 
 
 class CurriculumCreate(BaseModel):
-    video_url: str
+    video_url: AnyUrl
     title: Optional[str] = None
     # Phase 4: learner-selected difficulty (easy | medium | hard). Defaults to
     # "medium" so older clients that don't send it behave unchanged.
@@ -461,7 +462,7 @@ def _extract_youtube_id(url: str) -> Optional[str]:
 
 
 async def _find_existing_ready_curriculum(
-    session: AsyncSession, tenant_id: int, user_id: int, video_id: str
+    session: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID, video_id: str
 ) -> Optional[Curriculum]:
     """Return this *user's* READY curriculum for the same YouTube video, if any.
 
@@ -482,7 +483,7 @@ async def _find_existing_ready_curriculum(
     return result.scalars().first()
 
 
-async def _cascade_delete_curriculum(session: AsyncSession, curriculum_id: int) -> None:
+async def _cascade_delete_curriculum(session: AsyncSession, curriculum_id: uuid.UUID) -> None:
     """Purge all rows that hang off a curriculum, child-first.
 
     Covers grandchildren keyed off checkpoints/concepts/exercises/sessions that
@@ -822,7 +823,7 @@ async def ping():
     return {"ping": "pong"}
 
 
-async def _award_xp_and_streak(session: AsyncSession, user_id: int) -> Dict[str, Any]:
+async def _award_xp_and_streak(session: AsyncSession, user_id: uuid.UUID) -> Dict[str, Any]:
     from datetime import date, timedelta
     stmt = select(User).where(User.id == user_id)
     user = (await session.execute(stmt)).scalar_one_or_none()
@@ -951,7 +952,7 @@ async def evaluate(
 
 @router.post("/{curriculum_id}/recap")
 async def generate_recap(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -984,7 +985,7 @@ async def generate_recap(
 
 @router.delete("/{curriculum_id}")
 async def delete_curriculum(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1027,7 +1028,7 @@ async def delete_curriculum(
 
 
 async def _get_or_create_session(
-    session: AsyncSession, user_id: int, curriculum_id: int
+    session: AsyncSession, user_id: uuid.UUID, curriculum_id: uuid.UUID
 ):
     """Return the learner's Session row for this curriculum, creating it once."""
     stmt = select(Session).where(
@@ -1044,7 +1045,7 @@ async def _get_or_create_session(
 
 @router.get("/{curriculum_id}/progress", response_model=Dict[str, Any])
 async def get_progress(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1068,7 +1069,7 @@ async def get_progress(
 
 @router.post("/{curriculum_id}/progress", response_model=Dict[str, Any])
 async def post_progress(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     ping: ProgressPing,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -1106,7 +1107,7 @@ async def post_progress(
 
 @router.get("/{curriculum_id}/graph", response_model=Dict[str, Any])
 async def get_curriculum_graph(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1162,7 +1163,7 @@ async def get_curriculum_graph(
 
 @router.get("/{curriculum_id}", response_model=Dict[str, Any])
 async def get_curriculum(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1252,7 +1253,7 @@ async def get_curriculum(
                     "ts": cp.ts,
                     "segment_id": cp.segment_id,
                     "concept_id": cp.concept_id,
-                    "exercise_type": cp.exercise_type,
+                    "exercise_type": cp.exercise_type.value if cp.exercise_type else None,
                     "difficulty": cp.difficulty,
                     "exercise": _exercise_payload(exercise_map.get(cp.id)),
                     # Persisted attempt state (Answer 2): status hydrates the
@@ -1271,7 +1272,7 @@ async def get_curriculum(
 
 @router.get("/{curriculum_id}/video", response_model=Dict[str, Any])
 async def get_upload_video_url(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1336,7 +1337,7 @@ async def get_upload_video_url(
 
 @router.post("/{curriculum_id}/signal")
 async def start_signal_video(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -1360,7 +1361,7 @@ async def start_signal_video(
 
 @router.put("/{curriculum_id}/notes")
 async def update_curriculum_notes(
-    curriculum_id: int,
+    curriculum_id: uuid.UUID,
     payload: UpdateNotesRequest,
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
