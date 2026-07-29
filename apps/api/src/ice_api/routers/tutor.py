@@ -5,6 +5,7 @@ from sqlalchemy.future import select
 from typing import List, Optional
 import google.generativeai as genai
 import os
+import uuid
 
 from ice_api.deps import get_db, get_current_user
 from ice_api.models import Curriculum, User, Checkpoint
@@ -23,7 +24,7 @@ class TutorResponse(BaseModel):
 @router.post("/{id}/tutor", response_model=TutorResponse)
 async def ask_tutor(
     request: TutorRequest,
-    id: int = Path(...),
+    id: uuid.UUID = Path(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):

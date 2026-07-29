@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/stats", tags=["stats"])
 
 
-async def _total_curricula(session: AsyncSession, tenant_id: int, user_id: int) -> int:
+async def _total_curricula(session: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID) -> int:
     stmt = select(func.count(Curriculum.id)).where(
         Curriculum.tenant_id == tenant_id,
         or_(Curriculum.user_id == user_id, Curriculum.user_id.is_(None)),
@@ -51,7 +51,7 @@ async def _total_curricula(session: AsyncSession, tenant_id: int, user_id: int) 
     return int((await session.execute(stmt)).scalar() or 0)
 
 
-async def _ready_curricula(session: AsyncSession, tenant_id: int, user_id: int) -> int:
+async def _ready_curricula(session: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID) -> int:
     stmt = select(func.count(Curriculum.id)).where(
         Curriculum.tenant_id == tenant_id,
         or_(Curriculum.user_id == user_id, Curriculum.user_id.is_(None)),
@@ -60,7 +60,7 @@ async def _ready_curricula(session: AsyncSession, tenant_id: int, user_id: int) 
     return int((await session.execute(stmt)).scalar() or 0)
 
 
-async def _attempt_counts(session: AsyncSession, user_id: int) -> tuple[int, int]:
+async def _attempt_counts(session: AsyncSession, user_id: uuid.UUID) -> tuple[int, int]:
     """Return (total_attempts, correct_attempts) for this user."""
     total = int(
         (
@@ -86,7 +86,7 @@ async def _attempt_counts(session: AsyncSession, user_id: int) -> tuple[int, int
     return total, correct
 
 
-async def _watched_seconds(session: AsyncSession, user_id: int) -> float:
+async def _watched_seconds(session: AsyncSession, user_id: uuid.UUID) -> float:
     """Sum real accumulated watch-time across the user's sessions (Block B).
 
     ``sessions.watched_seconds`` is an additive column; if it does not exist yet

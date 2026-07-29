@@ -3,6 +3,7 @@ import json
 import os
 from typing import Dict, Any, List, Optional
 import httpx
+import uuid
 
 from ice_shared.settings import settings
 from sqlalchemy import text
@@ -109,7 +110,7 @@ Example:
         return None
 
 
-async def generate_exercises_for_curriculum(curriculum_id: int):
+async def generate_exercises_for_curriculum(curriculum_id: uuid.UUID):
     """
     Generate exercises for all checkpoints of a curriculum.
     """

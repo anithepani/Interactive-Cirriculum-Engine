@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+import uuid
 
 from ice_api.models import Artifact, Curriculum
 from ice_shared import settings
@@ -32,7 +33,7 @@ async def _ensure_tables() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def _set_status(curriculum_id: int, tenant_id: str, status: str, url: str | None = None) -> None:
+async def _set_status(curriculum_id: uuid.UUID, tenant_id: str, status: str, url: str | None = None) -> None:
     set_tenant_context(tenant_id)
     factory = get_session_factory()
     async with factory() as session:
@@ -113,7 +114,7 @@ Dialogue: 0,0:00:00.00,0:00:{duration:05.2f},Default,,0,0,0,,{text}
 
 async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
     reset_engine()
-    curriculum_id = int(curriculum_id_str)
+    curriculum_id = uuid.UUID(curriculum_id_str)
     set_tenant_context(tenant_id)
     await _ensure_tables()
 
@@ -365,7 +366,7 @@ async def _run_with_failover(curriculum_id: str, tenant_id: str) -> None:
     except Exception as exc:
         logger.error(f"Signal video generation failed: {exc}", exc_info=True)
         try:
-            await _set_status(int(curriculum_id), tenant_id, "failed")
+            await _set_status(curriculum_id, tenant_id, "failed")
         except Exception:
             pass
         raise

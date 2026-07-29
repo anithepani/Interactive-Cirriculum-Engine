@@ -12,7 +12,7 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/api/v1/review", tags=["review"])
 
 class GradeReviewRequest(BaseModel):
-    concept_id: int
+    concept_id: str
     grade: int  # 0 to 5
 
 @router.get("/due")

@@ -86,7 +86,7 @@ async def _get_curriculum_details(curriculum_id: str) -> tuple[str, int | None]:
 
         factory = get_session_factory()
         async with factory() as session:
-            c = await session.get(Curriculum, int(curriculum_id))
+            c = await session.get(Curriculum, curriculum_id)
             value = str(getattr(c, "difficulty", None) or "medium").strip().lower()
             diff = value if value in ("easy", "medium", "hard") else "medium"
             uid = c.user_id if c else None
@@ -463,7 +463,7 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         should_dispatch = False
         factory = get_session_factory()
         async with factory() as session:
-            c = await session.get(Curriculum, int(curriculum_id))
+            c = await session.get(Curriculum, curriculum_id)
             if c and c.signal_status not in ("queued", "processing", "ready", "skipped"):
                 if settings.signal_video.enabled:
                     c.signal_status = "queued"

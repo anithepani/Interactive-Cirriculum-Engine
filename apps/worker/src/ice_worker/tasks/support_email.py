@@ -1,10 +1,11 @@
+from __future__ import annotations
+
+import uuid
 """Celery task: dispatch a support/feedback ticket email to the support inbox.
 
 Dispatched from the API via ``send_task`` (see ``ice_api/routers/support.py``)
 so the SMTP round-trip never blocks the request thread.
 """
-from __future__ import annotations
-
 import logging
 import smtplib
 from email.mime.text import MIMEText
@@ -29,7 +30,7 @@ logger = logging.getLogger(__name__)
 def send_support_email(
     self: Any,
     submitter_email: str,
-    submitter_user_id: int,
+    submitter_user_id: uuid.UUID,
     category: str,
     subject: str,
     description: str,

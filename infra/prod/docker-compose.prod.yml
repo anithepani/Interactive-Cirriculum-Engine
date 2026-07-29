@@ -9,7 +9,7 @@ name: ice
 services:
   api:
     image: ghcr.io/${GHCR_OWNER:-anithepani}/ice/api:${IMAGE_TAG:-latest}
-    env_file: .env
+    env_file: ../../.env
     expose:
       - "8000"
     depends_on: [minio]
@@ -21,19 +21,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+    environment:
+      - PYTHONPATH=/app/apps/worker/src:/app/libs/shared/src:/app/libs/contracts/src:/app/apps/api/src
+    volumes:
+      - ../../:/app
 
   worker:
-    image: ghcr.io/${GHCR_OWNER:-anithepani}/ice/worker:${IMAGE_TAG:-latest}
-    env_file: .env
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.worker
+    env_file: ../../.env
+
     # Tuned for Upstash free-tier (10K cmds/day):
     #   --without-gossip/-mingle/-heartbeat removes periodic Redis round-trips.
     #   -s 30 reduces scheduler ticks (one per 30s vs default 5s).
-    command: ["uv", "run", "celery", "-A", "ice_worker.celery_app", "worker", "-l", "info", "--without-gossip", "--without-mingle", "--without-heartbeat", "-s", "30"]
+    command: ["uv", "run", "celery", "-A", "ice_worker.celery_app", "worker", "-l", "info", "--without-gossip", "--without-mingle", "--without-heartbeat", "-s", "30", "-c", "1"]
     # 8 GB VM — worker gets 1.5 GB hard / 800 MB soft (rest for api + minio + caddy + OS)
     mem_limit: 1500m
     mem_reservation: 800m
     networks: [ice]
     restart: unless-stopped
+    environment:
+      - PYTHONPATH=/app/apps/worker/src:/app/libs/shared/src:/app/libs/contracts/src:/app/apps/api/src
+    volumes:
+      - ../../:/app
 
   minio:
     image: minio/minio:latest
