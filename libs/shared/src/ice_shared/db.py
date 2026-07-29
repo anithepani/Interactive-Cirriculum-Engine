@@ -93,7 +93,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     factory = get_session_factory()
     async with factory() as session:
         engine = get_engine()
-        if settings.db_rls_enabled and engine.dialect.name == "postgresql":
+        if settings.db_rls_enabled and engine.name == "postgresql":
             tenant_id = current_tenant_id()
             if tenant_id is not None:
                 await session.execute(

@@ -46,7 +46,7 @@ async def protect_route(
         )
 
     set_tenant_context(str(user.tenant_id))
-    if session.bind.dialect.name == "postgresql":
+    if getattr(session.bind, "name", "") == "postgresql":
         await session.execute(
             text("SELECT set_config('app.tenant_id', :tid, true)"),
             {"tid": str(user.tenant_id)},

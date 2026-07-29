@@ -86,7 +86,7 @@ async def get_current_user(
     if user is None or user.token_version != token_version:
         raise credentials_exception
     set_tenant_context(str(user.tenant_id))
-    if session.bind.dialect.name == "postgresql":
+    if session.bind.name == "postgresql":
         await session.execute(
             text("SELECT set_config('app.tenant_id', :tid, true)"),
             {"tid": str(user.tenant_id)},

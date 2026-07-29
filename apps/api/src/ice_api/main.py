@@ -59,7 +59,7 @@ async def _ensure_users_columns() -> None:
     log = get_logger("ice_api")
     try:
         engine = get_engine()
-        if engine.dialect.name != "postgresql":
+        if engine.name != "postgresql":
             return
         async with engine.begin() as conn:
             for col, (col_type, default) in _USERS_DRIFT_COLUMNS.items():
@@ -95,7 +95,7 @@ async def _resync_id_sequences() -> None:
     log = get_logger("ice_api")
     try:
         engine = get_engine()
-        if engine.dialect.name != "postgresql":
+        if engine.name != "postgresql":
             return
         async with engine.begin() as conn:
             for table in _ID_SEQ_TABLES:

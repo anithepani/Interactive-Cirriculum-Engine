@@ -156,7 +156,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
       )
     );
     authFetch(`/api/v1/notifications/${id}/read`, {
-      method: "PATCH",
+      method: "POST",
     }).catch(() => {});
   };
 

@@ -42,6 +42,15 @@ export default function SupportPage() {
     setToastOpen(true);
   };
 
+const CATEGORY_MAP: Record<string, string> = {
+  "General": "general",
+  "Technical": "general",
+  "Billing": "general",
+  "Account": "general",
+  "Bug Report": "bug",
+  "Feature Request": "feature",
+};
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -52,10 +61,11 @@ export default function SupportPage() {
 
     setSubmitting(true);
     try {
+      const backendCategory = CATEGORY_MAP[category] || "general";
       const res = await authFetch("/api/v1/support", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, subject, description }),
+        body: JSON.stringify({ category: backendCategory, subject, description }),
       });
 
       if (res.ok) {
