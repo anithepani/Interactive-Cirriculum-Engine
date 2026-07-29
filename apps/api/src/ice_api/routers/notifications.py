@@ -25,7 +25,7 @@ async def list_notifications(
 ) -> dict:
     stmt = (
         select(Notification)
-        .where(Notification.user_id == int(current_user.id))
+        .where(Notification.user_id == current_user.id)
         .order_by(Notification.created_at.desc())
         .limit(50)
     )
@@ -33,7 +33,7 @@ async def list_notifications(
     unread_stmt = (
         select(func.count(Notification.id))
         .where(
-            Notification.user_id == int(current_user.id),
+            Notification.user_id == current_user.id,
             Notification.read_at.is_(None),
         )
     )
@@ -65,7 +65,7 @@ async def mark_read(
         update(Notification)
         .where(
             Notification.id == notification_id,
-            Notification.user_id == int(current_user.id),
+            Notification.user_id == current_user.id,
         )
         .values(read_at=datetime.now(UTC).replace(tzinfo=None))
     )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import secrets
+import uuid
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
@@ -82,7 +83,9 @@ async def create_user_and_tenant(
     oauth_id: str | None = None,
     is_verified: bool = False,
 ) -> User:
+    tenant_id = uuid.uuid4()
     tenant = Tenant(
+        id=tenant_id,
         name=f"{name}'s Workspace",
         slug=f"{sanitize_input(name.lower())}-{secrets.token_hex(4)}",
     )
@@ -90,7 +93,8 @@ async def create_user_and_tenant(
     await session.flush()
 
     user = User(
-        tenant_id=tenant.id,
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
         email=email,
         name=sanitize_input(name),
         password_hash=hashed_password,
@@ -500,7 +504,7 @@ async def refresh_token(
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
-    stmt = select(User).where(User.id == int(user_id), User.is_active == True)
+    stmt = select(User).where(User.id == user_id, User.is_active == True)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or user.token_version != token_version:

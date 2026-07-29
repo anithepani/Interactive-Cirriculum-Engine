@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ice_shared import settings
@@ -37,7 +37,7 @@ async def protect_route(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         )
 
-    stmt = select(User).where(User.id == int(user_id), User.is_active == True)
+    stmt = select(User).where(User.id == user_id, User.is_active == True)
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
     if not user:
@@ -46,4 +46,9 @@ async def protect_route(
         )
 
     set_tenant_context(str(user.tenant_id))
+    if session.bind.dialect.name == "postgresql":
+        await session.execute(
+            text("SET LOCAL app.tenant_id = :tid"),
+            {"tid": str(user.tenant_id)},
+        )
     return user

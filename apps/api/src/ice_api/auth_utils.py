@@ -9,11 +9,11 @@ from jose import JWTError, jwt
 from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from ice_shared.settings import settings
 from ice_api.models import User
-from ice_shared.db import get_session
+from ice_shared.db import get_session, set_tenant_context
 
 pwd_context = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
@@ -73,9 +73,9 @@ async def get_current_user(
         # Reject refresh tokens used as access tokens (RFC-style type claim).
         if payload.get("type") != "access":
             raise credentials_exception
-        # "sub" must be a string per JWT RFC 7519; python-jose enforces this on
-        # decode. Cast back to int for the ORM lookup (User.id is Integer).
-        user_id = int(user_id_raw)
+        # "sub" remains a string per JWT RFC 7519. PostgreSQL UUID comparisons
+        # accept its canonical string representation directly.
+        user_id = user_id_raw
         token_version = payload.get("tv", 1)
     except (JWTError, ValueError, TypeError):
         raise credentials_exception
@@ -85,6 +85,12 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None or user.token_version != token_version:
         raise credentials_exception
+    set_tenant_context(str(user.tenant_id))
+    if session.bind.dialect.name == "postgresql":
+        await session.execute(
+            text("SET LOCAL app.tenant_id = :tid"),
+            {"tid": str(user.tenant_id)},
+        )
     return user
 
 def is_valid_email(email: str) -> bool:
@@ -94,4 +100,4 @@ def is_valid_email(email: str) -> bool:
 
 def sanitize_input(text: str) -> str:
     """Remove special characters to prevent injection."""
-    return ''.join(c for c in text if c.isalnum() or c in ' @.-_')  
+    return ''.join(c for c in text if c.isalnum() or c in ' @.-_')

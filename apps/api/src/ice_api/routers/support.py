@@ -48,7 +48,7 @@ async def submit_support(
         "ice_worker.tasks.support_email.send_support_email",
         args=[
             current_user.email,
-            int(current_user.id),
+            str(current_user.id),
             body.category.value,
             body.subject,
             body.description,

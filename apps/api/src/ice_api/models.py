@@ -13,6 +13,7 @@ from sqlalchemy import (
     Enum,
     Index,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID, ARRAY
 from pgvector.sqlalchemy import Vector
@@ -70,23 +71,24 @@ class ReviewFormat(str, enum.Enum):
 # ---- Tables ----
 class Tenant(Base):
     __tablename__ = "tenants"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    slug = Column(String, unique=True, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    name = Column(String(120), nullable=False)
+    slug = Column(String(60), unique=True, nullable=False)
+    token_budget = Column(Integer, nullable=False, server_default="250000")
     plan = Column(String, default="free")
     created_at = Column(DateTime, server_default=func.now())
 
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    email = Column(String(255), unique=True, nullable=False, index=True)
-    name = Column(String(255), nullable=False, default="User")
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    email = Column(String(255), nullable=False, index=True)
+    name = Column(String(120), nullable=True)
     password_hash = Column(String(255), nullable=True)
     oauth_provider = Column(String(50), nullable=True)
     oauth_id = Column(String(255), nullable=True)
-    role = Column(Enum(UserRole), default=UserRole.learner)
+    role = Column(String(20), nullable=False, default=UserRole.learner.value, server_default="learner")
     is_verified = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     avatar_url = Column(String(255), nullable=True)
@@ -99,23 +101,24 @@ class User(Base):
     last_login = Column(DateTime, nullable=True)
     __table_args__ = (
         UniqueConstraint("oauth_provider", "oauth_id"),
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
         Index("ix_users_tenant", "tenant_id"),
     )
 
 
 class Curriculum(Base):
     __tablename__ = "curricula"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     # Per-user ownership (Block A follow-up). Nullable + ON DELETE SET NULL so a
     # removed user does not cascade-delete their curricula. Scopes duplicate
     # validation to the individual learner, not the whole tenant.
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     source_type = Column(String, nullable=True)  # "youtube" or "upload"
     source_ref = Column(String, nullable=True)  # YouTube URL or file path
     content_hash = Column(String, unique=True, nullable=True)
     title = Column(String, nullable=False)
-    status = Column(Enum(CurriculumStatus), default=CurriculumStatus.queued)
+    status = Column(Enum(CurriculumStatus, native_enum=False), default=CurriculumStatus.queued)
     language = Column(String, default="en")
     # ── Phase 4: learner-selected difficulty (easy | medium | hard) ───────
     # Additive nullable column with a "medium" default so existing curricula
@@ -140,8 +143,8 @@ class Curriculum(Base):
 
 class Segment(Base):
     __tablename__ = "segments"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    curriculum_id = Column(Integer, ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
+    id = Column(String(64), primary_key=True)
+    curriculum_id = Column(UUID(as_uuid=True), ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
 
     start_time = Column(Float, nullable=True)  # renamed from 'start' to match usage
     end_time = Column(Float, nullable=True)  # renamed from 'end'
@@ -157,8 +160,8 @@ class Segment(Base):
 
 class Concept(Base):
     __tablename__ = "concepts"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    curriculum_id = Column(Integer, ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
+    id = Column(String(64), primary_key=True)
+    curriculum_id = Column(UUID(as_uuid=True), ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
     label = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     difficulty = Column(Float, default=1.5)
@@ -170,9 +173,9 @@ class Concept(Base):
 
 class ConceptEdge(Base):
     __tablename__ = "concept_edges"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    source_id = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
-    target_id = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    source_id = Column(String(64), ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
+    target_id = Column(String(64), ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
     relation = Column(String, nullable=False)  # "prereq" or "related"
     __table_args__ = (UniqueConstraint("source_id", "target_id", "relation"),)
 
@@ -180,9 +183,9 @@ class ConceptEdge(Base):
 class Checkpoint(Base):
     __tablename__ = "checkpoints"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    curriculum_id = Column(Integer, ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
-    segment_id = Column(Integer, ForeignKey("segments.id", ondelete="CASCADE"), nullable=True)
-    concept_id = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=True)
+    curriculum_id = Column(UUID(as_uuid=True), ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
+    segment_id = Column(String(64), ForeignKey("segments.id", ondelete="CASCADE"), nullable=True)
+    concept_id = Column(String(64), ForeignKey("concepts.id", ondelete="CASCADE"), nullable=True)
     ts = Column(Float, nullable=False)
     exercise_type = Column(Enum(ExerciseType), nullable=False)
     difficulty = Column(Float, default=1.5)
@@ -192,9 +195,9 @@ class Checkpoint(Base):
 
 class Exercise(Base):
     __tablename__ = "exercises"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(String(64), primary_key=True)
     checkpoint_id = Column(Integer, ForeignKey("checkpoints.id", ondelete="CASCADE"), nullable=False)
-    type = Column(Enum(ExerciseType), nullable=False)
+    type = Column(Enum(ExerciseType, native_enum=False), nullable=False)
     payload = Column(JSON, nullable=True)  # stores question, options, answer, etc.
     confidence = Column(Float, nullable=True)
     validation_passed = Column(Boolean, default=False)
@@ -204,8 +207,8 @@ class Exercise(Base):
 
 class Test(Base):
     __tablename__ = "tests"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    exercise_id = Column(Integer, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    exercise_id = Column(String(64), ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False)
     kind = Column(String, nullable=False)  # "visible" or "hidden"
     input = Column(Text, nullable=True)
     expected = Column(Text, nullable=True)
@@ -214,9 +217,9 @@ class Test(Base):
 
 class Session(Base):
     __tablename__ = "sessions"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    curriculum_id = Column(Integer, ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    curriculum_id = Column(UUID(as_uuid=True), ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
     started_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
     resume_ts = Column(Float, default=0.0)
@@ -230,8 +233,8 @@ class Session(Base):
 
 class SessionEvent(Base):
     __tablename__ = "session_events"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(Integer, ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    session_id = Column(UUID(as_uuid=True), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False)
     ts = Column(Float, nullable=False)
     type = Column(String, nullable=False)  # "play", "pause", "checkpoint", "submit", "feedback"
     payload = Column(JSON, nullable=True)
@@ -239,10 +242,10 @@ class SessionEvent(Base):
 
 class EvalResult(Base):
     __tablename__ = "eval_results"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_event_id = Column(Integer, ForeignKey("session_events.id", ondelete="CASCADE"), nullable=True)
-    exercise_id = Column(Integer, ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False)
-    verdict = Column(Enum(Verdict), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    session_event_id = Column(UUID(as_uuid=True), ForeignKey("session_events.id", ondelete="CASCADE"), nullable=True)
+    exercise_id = Column(String(64), ForeignKey("exercises.id", ondelete="CASCADE"), nullable=False)
+    verdict = Column(Enum(Verdict, native_enum=False), nullable=False)
     score = Column(Float, nullable=False)
     explanation = Column(Text, nullable=True)
     anti_cheat_flag = Column(Boolean, default=False)
@@ -251,9 +254,9 @@ class EvalResult(Base):
 
 class SkillModel(Base):
     __tablename__ = "skill_model"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    concept_id = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    concept_id = Column(String(64), ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False)
     mastery = Column(Float, default=0.0)
     attempts = Column(Integer, default=0)
     # ── Phase 4: M10 adaptive difficulty + M11 weak-concept tracking ──────
@@ -284,7 +287,7 @@ class CheckpointAttempt(Base):
 
     __tablename__ = "checkpoint_attempts"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     checkpoint_id = Column(Integer, ForeignKey("checkpoints.id", ondelete="CASCADE"), nullable=False)
     status = Column(String, nullable=False)  # "correct" | "incorrect"
     answer = Column(Text, nullable=True)
@@ -298,7 +301,7 @@ class CheckpointAttempt(Base):
 
 class PromptVersion(Base):
     __tablename__ = "prompt_versions"
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     name = Column(String, nullable=False)
     version = Column(String, nullable=False)
     model = Column(String, nullable=False)
@@ -310,9 +313,9 @@ class PromptVersion(Base):
 
 class Artifact(Base):
     __tablename__ = "artifacts"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    curriculum_id = Column(Integer, ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    curriculum_id = Column(UUID(as_uuid=True), ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
     kind = Column(String, nullable=False)  # "video", "audio", "frame", "transcript", "ocr"
     storage_uri = Column(String, nullable=False)
     meta = Column(JSON, nullable=True)
@@ -327,8 +330,8 @@ class Notification(Base):
 
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    curriculum_id = Column(Integer, ForeignKey("curricula.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    curriculum_id = Column(UUID(as_uuid=True), ForeignKey("curricula.id", ondelete="CASCADE"), nullable=True)
     type = Column(String, nullable=False)  # "curriculum_ready" | "curriculum_failed"
     title = Column(String, nullable=False)
     payload = Column(JSON, nullable=True)

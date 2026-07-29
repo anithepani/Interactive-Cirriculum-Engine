@@ -32,17 +32,17 @@ def _secret() -> str:
     return settings.sse_token_secret or settings.jwt_secret
 
 
-def _issue_token(user_id: int, ttl: int = _TOKEN_TTL_SEC) -> str:
+def _issue_token(user_id: str, ttl: int = _TOKEN_TTL_SEC) -> str:
     exp = int(time.time()) + ttl
     msg = f"{user_id}:{exp}".encode()
     sig = hmac.new(_secret().encode(), msg, hashlib.sha256).hexdigest()
     return f"{user_id}:{exp}:{sig}"
 
 
-def _verify_token(token: str) -> int | None:
+def _verify_token(token: str) -> str | None:
     try:
         uid_s, exp_s, sig = token.split(":")
-        uid, exp = int(uid_s), int(exp_s)
+        uid, exp = uid_s, int(exp_s)
     except (ValueError, AttributeError):
         return None
     if exp < int(time.time()):
@@ -57,7 +57,7 @@ def _verify_token(token: str) -> int | None:
 
 @router.post("/token")
 async def issue_sse_token(current_user: User = Depends(get_current_user)) -> dict:
-    return {"token": _issue_token(int(current_user.id))}
+    return {"token": _issue_token(str(current_user.id))}
 
 
 @router.get("/stream")
