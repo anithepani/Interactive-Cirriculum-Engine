@@ -11,18 +11,22 @@ export default function LogoutPage() {
   const [loggedOut, setLoggedOut] = useState(false);
 
   useEffect(() => {
-    // Clear tokens securely
-    removeTokens();
-    
-    // Simulate a brief delay for the sleek exit animation
-    const timer = setTimeout(() => {
-      setLoggedOut(true);
-      // Optional: automatically redirect to login after a few seconds
-      // setTimeout(() => router.push("/login"), 3000);
-    }, 800);
+    let cancelled = false;
 
-    return () => clearTimeout(timer);
-  }, []);
+    // Await cookie deletion: only then is the session actually gone as far as
+    // middleware is concerned. Reporting success earlier would be a lie.
+    (async () => {
+      await removeTokens();
+      if (cancelled) return;
+      setLoggedOut(true);
+      // Drop any cached RSC payload rendered for the previous session.
+      router.refresh();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-canvas p-4 relative overflow-hidden">

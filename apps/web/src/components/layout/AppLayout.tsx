@@ -4,7 +4,7 @@ import Sidebar from "./Sidebar";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser, removeTokens, type AuthUser } from "@/lib/auth";
+import { getCurrentUser, type AuthUser } from "@/lib/auth";
 import { useLayoutStore } from "@/lib/store";
 import { Bell, Search, Mail, Moon, Sun, LifeBuoy, Flame, Settings, LogOut, Sparkles } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

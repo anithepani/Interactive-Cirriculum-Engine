@@ -7,7 +7,7 @@ import * as yup from "yup";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, User, CheckCircle, AlertCircle, Github, ArrowLeft } from "lucide-react";
-import { setTokens, oauthUrl } from "@/lib/auth";
+import { setTokens, safeRedirectPath, oauthUrl } from "@/lib/auth";
 import { InteractiveAvatar } from "@/components/InteractiveAvatar";
 
 const schema = yup.object({
@@ -71,10 +71,25 @@ export default function SignupPage() {
       if (!res.ok) {
         throw new Error(result.detail || "Verification failed");
       }
-      setTokens(result.access_token, result.refresh_token);
+      // Await the middleware-visible session cookie before navigating, so the
+      // new account does not land back on /login.
+      const sessionReady = await setTokens(
+        result.access_token,
+        result.refresh_token
+      );
+      if (!sessionReady) {
+        throw new Error(
+          "Account verified, but the session could not be started. Please log in."
+        );
+      }
+
       setStep("success");
-      setTimeout(() => router.push("/dashboard"), 1500);
-    } catch (err: any) {
+
+      const redirect = safeRedirectPath(
+        new URLSearchParams(window.location.search).get("redirect")
+      );
+      router.replace(redirect);
+      router.refresh();    } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);

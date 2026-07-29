@@ -10,7 +10,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { getCurrentUser, isAuthenticated, removeTokens, type AuthUser } from "@/lib/auth";
+import { getCurrentUser, isAuthenticated, type AuthUser } from "@/lib/auth";
 
 function NavLinkItem({ href, label }: { href: string; label: string }) {
   return (
