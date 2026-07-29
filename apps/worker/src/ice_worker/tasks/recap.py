@@ -16,17 +16,19 @@ import sys
 import tempfile
 from typing import Any
 
-from sentence_transformers import SentenceTransformer
-
+from ice_api.models import Artifact, Concept, Curriculum
 from ice_shared import settings
-from ice_shared.db import get_session_factory, get_engine, reset_engine, set_tenant_context, Base
+from ice_shared.db import Base, get_engine, get_session_factory, reset_engine, set_tenant_context
 from ice_shared.s3 import get_s3_client, tenant_prefix
-from ice_api.models import Curriculum, Concept, Artifact
+from sentence_transformers import SentenceTransformer
+from sqlalchemy import text
+
 from ice_worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
 import math
+
 # sentence-transformers removed
 
 # Windows asyncio fix
@@ -38,6 +40,7 @@ async def _ensure_tables() -> None:
     import ice_api.models  # noqa: F401
     engine = get_engine()
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         await conn.run_sync(Base.metadata.create_all)
 
 

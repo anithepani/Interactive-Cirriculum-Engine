@@ -91,15 +91,19 @@ local dev stack. Two optional variables are useful for local testing:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MINIO_EXTERNAL_ENDPOINT` | `http://localhost:9000` | Browser-reachable MinIO endpoint used to sign presigned URLs for the HTML5 player + signal/recap video. Set to the host:port your browser can reach MinIO on (e.g. `http://localhost:9000` when running the stack locally, or your LAN IP when testing from another device). |
-| `PEXELS_API_KEY` | _(unset)_ | Optional b-roll fetch for the signal video. When unset the signal task logs a warning and continues without b-roll. |
+| `SIGNAL_VIDEO_ENABLED` | `true` | Master toggle for the signal video. `false` skips the task and marks `signal_status=skipped` so the nice-to-have can't block curriculum readiness on a CPU-only host. |
+| `SIGNAL_VIDEO_ENGINE` | `remotion` | `remotion` (animated; needs `npx`/Node on PATH) or `ffmpeg` (static slideshow). |
+| `SIGNAL_VIDEO_TTS_COMMAND` | `edge-tts` | TTS binary; preflighted at task start so a missing binary fails fast with a clear log. |
+| `SIGNAL_VIDEO_REMOTION_COMMAND` | `npx` | Remotion binary; preflighted only when `engine=remotion`. |
 
 Optional vision-tuning knobs (all have safe defaults; see `.env.example` and
 `libs/shared/src/ice_shared/settings.py`):
 
-`VISION_EXTRACT_RATE_SEC`, `VISION_MAX_FRAMES`, `VISION_MAX_WORKERS`,
-`VISION_DEDUP_THRESHOLD`, `VISION_OCR_CONFIDENCE_THRESHOLD`,
-`VISION_ENABLE_HEAVY_FALLBACKS`, `VISION_OCR_MAX_WIDTH` (1280),
-`VISION_ONNX_INTRA_OP_THREADS` (1).
+`VISION_EXTRACT_RATE_SEC` (5.0), `VISION_MAX_FRAMES` (60),
+`VISION_MAX_WORKERS`, `VISION_DEDUP_THRESHOLD` (0.06),
+`VISION_OCR_CONFIDENCE_THRESHOLD`,
+`VISION_ENABLE_HEAVY_FALLBACKS`, `VISION_OCR_MAX_WIDTH` (768),
+`VISION_ONNX_INTRA_OP_THREADS` (1), `VISION_MAX_FALLBACK_FRAMES` (3).
 
 ---
 
@@ -149,7 +153,8 @@ cinematic video appears and plays once `signal_status === "ready"`.
 
 ### 2.3 Failure / no-op cases
 
-- `PEXELS_API_KEY` unset → logged warning, b-roll skipped, render still completes.
+- `SIGNAL_VIDEO_ENABLED=false` → task marks `signal_status=skipped` and exits without calling Gemini/Remotion/TTS.
+- `edge-tts` or `npx` (when `engine=remotion`) not on PATH → preflight fails fast, `signal_status` → `failed` with a clear log (no swallowed subprocess error).
 - Gemini model unavailable → `get_gemini_model` lists models + falls back; if all
   fail, `signal_status` → `failed` (see §7 to retry).
 
@@ -186,14 +191,16 @@ M3 visuals: <M> items (<C> code regions) for curriculum <id>
   come from:
   - Seek-based frame extraction (decode ~1 frame per sample instead of every
     frame) with a `grab()`-based fallback for containers that can't seek.
-  - Near-duplicate dedup over a small window of recent frames.
-  - Downscaling wide frames before OCR (`VISION_OCR_MAX_WIDTH`, default 1280).
+  - Near-duplicate dedup over a wider window (8 kept frames) of recent frames.
+  - Downscaling wide frames before OCR (`VISION_OCR_MAX_WIDTH`, default 768).
   - Threaded OCR via `ThreadPoolExecutor` (`VISION_MAX_WORKERS`, default
     `min(cpu_count, 4)`); RapidOCR/ONNX Runtime releases the GIL so threads give
     real parallelism without the Celery daemon-process crash a process pool
     would cause.
   - ONNX intra-op thread cap (`VISION_ONNX_INTRA_OP_THREADS=1`) to avoid core
     oversubscription, and a module-global warm OCR engine (no per-frame cold start).
+  - A `VISION_MAX_FALLBACK_FRAMES` cap so the heavy upscale/TrOCR path can't
+    blow the latency budget on a single bad video.
 
 ### 3.3 Regression sanity
 
@@ -355,8 +362,8 @@ All features are additive and zero-regression; reverting is incremental.
 | --- | --- |
 | **Difficulty** | `ALTER TABLE curricula DROP COLUMN difficulty;` (or set all rows to `'medium'`). The pipeline falls back to medium everywhere, matching pre-Phase-4 behaviour. |
 | **Dynamic exercise types** | No env toggle. The classifier already falls back to keywords if the LLM is down; an unknown/`None` category falls back to the non-technical pool (`mcq`/`conceptual`). To fully revert, `git revert` the Phase 5 commit (`4da748a`-equivalent). |
-| **Vision perf** | `VISION_MAX_WORKERS=1` → sequential OCR (no thread pool). `VISION_OCR_MAX_WIDTH=0` → disables pre-OCR downscaling. These restore older behaviour at the cost of latency. |
-| **Signal video auto-trigger** | Fully isolated; a failure only logs and never affects the curriculum. To stop auto-generation while keeping the manual button, revert the auto-dispatch block at the end of `generate_curriculum.py` (`_run`). |
+| **Vision perf** | `VISION_MAX_WORKERS=1` → sequential OCR (no thread pool). `VISION_OCR_MAX_WIDTH=0` → disables pre-OCR downscaling. `VISION_EXTRACT_RATE_SEC=2` + `VISION_MAX_FRAMES=150` restore the older (slower) sampling. These restore older behaviour at the cost of latency. |
+| **Signal video auto-trigger** | `SIGNAL_VIDEO_ENABLED=false` → skips the task and marks `signal_status=skipped` (no Gemini/Remotion/TTS work). Fully isolated; a failure only logs and never affects the curriculum. To stop auto-generation while keeping the manual button, revert the auto-dispatch block at the end of `generate_curriculum.py` (`_run`). |
 | **Local upload** | Simply don't use the drop zone — the YouTube path is untouched. If the presigned video URL won't play in the browser, set `MINIO_EXTERNAL_ENDPOINT` to the host:port your browser can reach MinIO on (default `http://localhost:9000`). |
 
 ### 7.2 Replay a failed stage

@@ -82,14 +82,8 @@ long_video_*.json
 *.tfstate
 *.tfstate.*
 
-# ---- M3 vision prototype artifacts (do not track) ----
-vision_pipeline/output/
-vision_pipeline/input/
-m3_visual_extraction/output/
-m3_visual_extraction/__pycache__/
 .vercel
 .env*
 
-# ---- Ignored local files ----
-*.db
-install.ps1
+# Production env template (placeholders only — real .env stays on the VM)
+!infra/prod/.env.example

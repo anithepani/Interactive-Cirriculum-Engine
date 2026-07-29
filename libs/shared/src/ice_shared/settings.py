@@ -86,20 +86,34 @@ class _OCR(BaseSettings):
 
 class _Vision(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="VISION_")
-    extract_rate_sec: float = 2.0
-    dedup_threshold: float = 0.08
+    # Sample every N seconds. 5s (was 2s) cuts candidate frames ~2.5x for a
+    # typical screen recording with negligible signal loss — slide/code change
+    # rarely move faster than this.
+    extract_rate_sec: float = 5.0
+    # Strict per-frame similarity threshold for near-duplicate suppression.
+    # Lower = stricter (0.06 vs 0.08) so held/static slides collapse more.
+    dedup_threshold: float = 0.06
     ocr_confidence_threshold: float = 0.7
     enable_heavy_fallbacks: bool = False
+    # 0 = auto (min(cpu_count, 4)). ONNX releases the GIL during inference, so
+    # threads give real parallelism without the daemonic-process crash that
+    # ProcessPool hits inside Celery's preforked worker.
     max_workers: int = 0
-    max_frames: int = 150
-    # Downscale frames wider than this (px) before OCR. Large screen recordings
-    # OCR much faster downscaled with negligible accuracy loss for slide/code
-    # text. 0 disables downscaling.
-    ocr_max_width: int = 1280
+    # Hard cap on OCR'd frames. 60 (was 150) bounds the worst-case OCR budget;
+    # with 5s sampling + stricter dedup a 10-min video reaches ~1 / 3 ratio.
+    max_frames: int = 60
+    # Downscale frames wider than this (px) before OCR. 768 (was 1280) is still
+    # legible for slide/code text and ~2x fewer pixels → faster inference.
+    # 0 disables downscaling.
+    ocr_max_width: int = 768
     # ONNX intra-op thread cap. With the threaded OCR pool each worker thread
     # shares one ONNX engine; capping intra-op threads to 1 avoids core
     # oversubscription (N threads x N cores). 0 = let ONNX Runtime decide.
     onnx_intra_op_threads: int = 1
+    # Hard cap on frames that may invoke the heavy fallback path (upscale +
+    # TrOCR). Prevents a single bad video from blowing the latency budget.
+    # Only consulted when enable_heavy_fallbacks is True.
+    max_fallback_frames: int = 3
 
 
 class _Pipeline(BaseSettings):
@@ -122,6 +136,35 @@ class _Pipeline(BaseSettings):
     # here so the API validates before streaming to MinIO. 2 GiB default.
     upload_max_bytes: int = 2 * 1024 * 1024 * 1024
     upload_allowed_exts: str = ".mp4,.mov,.mkv,.webm,.avi,.m4v"
+
+
+class _SignalVideo(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="SIGNAL_VIDEO_")
+    # Master toggle. When False the curriculum build skips dispatching this
+    # task entirely and marks signal_status="skipped" — the feature is a
+    # nice-to-have and must never block a curriculum from going live on a
+    # CPU-only free tier.
+    enabled: bool = True
+    # Render engine: "remotion" (animated, needs Node on PATH) or "ffmpeg"
+    # (static slideshow, faster, no Node). Defaults to remotion for parity
+    # with existing behaviour; switch to ffmpeg on constrained hosts.
+    engine: str = "remotion"
+    # Cap Gemini's selected sentences so generation stays fast + cheap.
+    max_slides: int = 6
+    # Truncate the transcript sent to Gemini to this many chars. 12k is ample
+    # signal for a summary; sending 50k made generation slower + costlier.
+    transcript_chars: int = 12000
+    # Render resolution (width,height). 1280x720 (was 1920x1080) halves the
+    # pixel work for both Remotion and ffmpeg paths.
+    width: int = 1280
+    height: int = 720
+    # TTS binary name to pre-flight (must be on PATH). When absent the task
+    # fails fast with a clear log instead of spawning and swallowing errors.
+    tts_command: str = "edge-tts"
+    # TTS voice.
+    tts_voice: str = "en-US-ChristopherNeural"
+    # npx binary name to pre-flight for the remotion engine.
+    remotion_command: str = "npx"
 
 
 class Settings(BaseSettings):
@@ -192,6 +235,7 @@ class Settings(BaseSettings):
     ocr: _OCR = Field(default_factory=_OCR)
     vision: _Vision = Field(default_factory=_Vision)
     pipeline: _Pipeline = Field(default_factory=_Pipeline)
+    signal_video: _SignalVideo = Field(default_factory=_SignalVideo)
 
     @property
     def database_url_resolved(self) -> str:
