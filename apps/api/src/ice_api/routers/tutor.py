@@ -94,7 +94,7 @@ CRITICAL RULES:
     
     # We will use Gemini to generate the response
     try:
-        model = genai.GenerativeModel('models/gemini-1.5-flash', system_instruction=system_prompt)
+        model = genai.GenerativeModel('models/gemini-3.6-flash', system_instruction=system_prompt)
         
         # Convert history format to Gemini format
         formatted_history = []
