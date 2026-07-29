@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CheckCircle, AlertCircle, Loader2 } from "lucide-react";
-import { setTokens } from "@/lib/auth";
+import { setTokens, safeRedirectPath } from "@/lib/auth";
 
 function CallbackHandler() {
   const router = useRouter();
@@ -14,13 +14,31 @@ function CallbackHandler() {
     const accessToken = searchParams.get("access_token");
     const refreshToken = searchParams.get("refresh_token");
 
-    if (accessToken && refreshToken) {
-      setTokens(accessToken, refreshToken);
-      router.replace("/dashboard");
+    if (!accessToken || !refreshToken) {
+      setError("Authentication failed. No tokens received.");
       return;
     }
 
-    setError("Authentication failed. No tokens received.");
+    let cancelled = false;
+
+    // The session cookie must exist before navigating, otherwise middleware
+    // bounces this fresh OAuth login back to /login.
+    (async () => {
+      const sessionReady = await setTokens(accessToken, refreshToken);
+      if (cancelled) return;
+
+      if (!sessionReady) {
+        setError("Signed in, but the session could not be started. Please try again.");
+        return;
+      }
+
+      router.replace(safeRedirectPath(searchParams.get("redirect")));
+      router.refresh();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, router]);
 
   if (error) {

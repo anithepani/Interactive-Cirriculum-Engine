@@ -7,7 +7,7 @@ import * as yup from "yup";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, AlertCircle, Github, Sparkles, ArrowLeft } from "lucide-react";
-import { setTokens, oauthUrl } from "@/lib/auth";
+import { setTokens, safeRedirectPath, oauthUrl } from "@/lib/auth";
 import { InteractiveAvatar } from "@/components/InteractiveAvatar";
 
 const schema = yup.object({
@@ -41,12 +41,28 @@ export default function LoginPage() {
       if (!res.ok) {
         throw new Error(result.detail || "Login failed");
       }
-      setTokens(result.access_token, result.refresh_token);
+
+      // Await the session cookie before navigating. Next.js middleware gates
+      // protected routes on that cookie, so redirecting first is what caused
+      // the bounce straight back to /login.
+      const sessionReady = await setTokens(
+        result.access_token,
+        result.refresh_token
+      );
+      if (!sessionReady) {
+        throw new Error(
+          "Signed in, but the session could not be started. Please try again."
+        );
+      }
+
       setSuccessMsg("Successfully logged in! Redirecting...");
-      setTimeout(() => {
-        const redirect = new URLSearchParams(window.location.search).get("redirect");
-        router.push(redirect || "/dashboard");
-      }, 1500);
+
+      const redirect = safeRedirectPath(
+        new URLSearchParams(window.location.search).get("redirect")
+      );
+      // `replace` so Back does not return to the login form on a live session.
+      router.replace(redirect);
+      router.refresh();
     } catch (err: any) {
       setError(err.message);
     } finally {

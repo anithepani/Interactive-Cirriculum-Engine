@@ -650,11 +650,11 @@ export default function CurriculumPage() {
                       setSavedNotes(true);
                       setTimeout(() => setSavedNotes(false), 2000);
                       try {
-                        await fetch(`/api/v1/curricula/${params.id}/notes`, {
+                        const res = await authFetch(`/api/v1/curricula/${params.id}/notes`, {
                           method: "PUT",
-                          headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ notes: notesText }),
                         });
+                        if (!res.ok) throw new Error(`Save failed: ${res.status}`);
                       } catch (e) {
                         console.error("Failed to save notes:", e);
                       }
@@ -720,9 +720,8 @@ export default function CurriculumPage() {
           onRun={async (answer: string) => {
             // Trial run only: /execute compiles + runs the code without the
             // hidden test suite and never touches the skill model or markers.
-            const response = await fetch("/api/v1/execute", {
+            const response = await authFetch("/api/v1/execute", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 code: answer,
                 language: selectedExercise.language || "python",

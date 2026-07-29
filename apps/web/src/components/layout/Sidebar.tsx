@@ -44,9 +44,12 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const handleLogout = () => {
-    removeTokens();
-    router.push("/");
+  const handleLogout = async () => {
+    // Navigate only after the server session cookie is expired, so protected
+    // routes are actually gated again.
+    await removeTokens();
+    router.replace("/");
+    router.refresh();
   };
 
   const { isSidebarCollapsed, toggleSidebar } = useLayoutStore();
