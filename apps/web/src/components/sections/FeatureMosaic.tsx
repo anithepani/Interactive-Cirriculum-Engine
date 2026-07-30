@@ -39,10 +39,10 @@ function FeatureCardContent({ card }: { card: (typeof FEATURE_CARDS)[0] }) {
            </div>
            {/* Fake terminal code */}
            <div className="font-mono text-xs sm:text-sm leading-loose">
-             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-blue-400 font-semibold">> ICE INGESTION_WORKER --url "youtube.com/..."</motion.p>
+             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 0.2 }} className="text-blue-400 font-semibold">&gt; ICE INGESTION_WORKER --url &quot;youtube.com/...&quot;</motion.p>
              <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 0.8 }} className="text-zinc-400 mt-2">[✓] Transcript fetched (12,400 tokens)</motion.p>
              <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 1.4 }} className="text-zinc-400">[✓] Concepts segmented (7 blocks)</motion.p>
-             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 2.0 }} className="text-lime mt-2">> Generating Checkpoints...</motion.p>
+             <motion.p initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 2.0 }} className="text-lime mt-2">&gt; Generating Checkpoints...</motion.p>
              <motion.div 
                 className="mt-3 h-1.5 bg-white/10 rounded-full overflow-hidden"
                 initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} transition={{ delay: 2.0 }}
