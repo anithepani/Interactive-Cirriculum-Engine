@@ -43,6 +43,7 @@ export default function TutorChat({ curriculumId, getCurrentTime }: TutorChatPro
       
       const res = await authFetch(`/api/v1/curricula/${curriculumId}/tutor`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMsg,
           video_time: video_time,
