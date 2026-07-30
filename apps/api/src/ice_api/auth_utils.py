@@ -73,14 +73,25 @@ async def get_current_user(
         # Reject refresh tokens used as access tokens (RFC-style type claim).
         if payload.get("type") != "access":
             raise credentials_exception
-        # "sub" remains a string per JWT RFC 7519. PostgreSQL UUID comparisons
-        # accept its canonical string representation directly.
-        user_id = user_id_raw
+        
+        # Check if the sub is a valid UUID, if not, they might be using an old token with an email.
+        try:
+            import uuid
+            user_id = str(uuid.UUID(user_id_raw))
+        except ValueError:
+            # If it's an email (old token), query by email instead
+            user_id = None
+            user_email = user_id_raw
+            
         token_version = payload.get("tv", 1)
     except (JWTError, ValueError, TypeError):
         raise credentials_exception
     
-    stmt = select(User).where(User.id == user_id, User.is_active == True)
+    if user_id:
+        stmt = select(User).where(User.id == user_id, User.is_active == True)
+    else:
+        stmt = select(User).where(User.email == user_email, User.is_active == True)
+
     result = await session.execute(stmt)
     user = result.scalar_one_or_none()
     if user is None or user.token_version != token_version:
