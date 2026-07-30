@@ -328,7 +328,7 @@ Transcript:
             c = await session.get(Curriculum, curriculum_id)
             if c:
                 new_art = Artifact(
-                    tenant_id=int(tenant_id),
+                    tenant_id=tenant_id,
                     curriculum_id=curriculum_id,
                     kind="signal_video",
                     storage_uri=s3_key

@@ -72,7 +72,18 @@ async def ask_tutor(
     checkpoint_count = cp_result.scalar_one_or_none() or 0
 
     # Configure Gemini
-    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+    genai.configure(api_key=os.environ.get("GEMINI_API_KEY"), transport="rest")
+    
+    available_models = [
+        m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods
+    ]
+    target_model = "gemini-3.5-flash"
+    for m in ["models/gemini-3.5-flash", "models/gemini-3.1-pro-preview", "models/gemini-flash-latest"]:
+        if m in available_models:
+            target_model = m.replace("models/", "")
+            break
+    if not target_model and available_models:
+        target_model = available_models[0].replace("models/", "")
     
     system_prompt = f"""
 You are the ICE Socratic AI Tutor, a world-class, highly charismatic, and insightful mentor. You are watching a video alongside the user at timestamp {request.video_time}s.
@@ -94,7 +105,7 @@ CRITICAL RULES:
     
     # We will use Gemini to generate the response
     try:
-        model = genai.GenerativeModel('models/gemini-3.6-flash', system_instruction=system_prompt)
+        model = genai.GenerativeModel(target_model, system_instruction=system_prompt)
         
         # Convert history format to Gemini format
         formatted_history = []
