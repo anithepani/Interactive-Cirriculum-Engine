@@ -29,7 +29,7 @@ async def ask_tutor(
     current_user: User = Depends(get_current_user)
 ):
     # Fetch curriculum and its transcript
-    result = await db.execute(select(Curriculum).where(Curriculum.id == id, Curriculum.user_id == current_user.id))
+    result = await session.execute(select(Curriculum).where(Curriculum.id == id, Curriculum.user_id == current_user.id))
     curriculum = result.scalar_one_or_none()
     
     if not curriculum:
@@ -68,7 +68,7 @@ async def ask_tutor(
         print(f"Failed to fetch transcript for curriculum {id}: {e}")
 
     # Fetch number of checkpoints
-    cp_result = await db.execute(select(func.count(Checkpoint.id)).where(Checkpoint.curriculum_id == id))
+    cp_result = await session.execute(select(func.count(Checkpoint.id)).where(Checkpoint.curriculum_id == id))
     checkpoint_count = cp_result.scalar_one_or_none() or 0
 
     # Configure Gemini

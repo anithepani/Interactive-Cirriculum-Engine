@@ -925,20 +925,24 @@ async def evaluate(
         else:
             passed = bool(answer)
 
+        # Extract IDs before any intermediate commits expire the objects
+        user_id = current_user.id
+        cp_id = cp.id
+
         # M11: fold this attempt into the learner's skill model (best-effort;
         # never breaks the eval response). M10 adjusts next-checkpoint difficulty.
         await _update_skill_model(
-            session, current_user.id, cp, exercise, passed
+            session, user_id, cp, exercise, passed
         )
 
         # Persist the attempt so the marker + locked state survive reloads.
         await _record_checkpoint_attempt(
-            session, current_user.id, cp.id, passed, answer
+            session, user_id, cp_id, passed, answer
         )
 
         gamification = {}
         if passed:
-            gamification = await _award_xp_and_streak(session, current_user.id)
+            gamification = await _award_xp_and_streak(session, user_id)
             await session.commit()
 
         return {"status": "ok", "passed": passed, **extra, **gamification}
