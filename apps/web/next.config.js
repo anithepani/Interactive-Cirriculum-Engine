@@ -28,10 +28,6 @@ const nextConfig = {
         source: "/api/:path*",
         destination: `${apiBase}/api/:path*`,
       },
-      {
-        source: "/minio/:path*",
-        destination: `http://4.247.144.148:9000/:path*`,
-      },
     ];
   },
   typescript: {
