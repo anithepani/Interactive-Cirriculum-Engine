@@ -102,10 +102,11 @@ export default function MediaTabs({
         );
       }
       if (signalUrl) {
+        const proxiedSignalUrl = signalUrl.replace(/^http:\/\/4\.247\.144\.148:9000/, '/minio');
         return (
           <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
             <video
-              src={signalUrl}
+              src={proxiedSignalUrl}
               controls
               className="h-full w-full object-contain"
               controlsList="nodownload"
@@ -158,10 +159,11 @@ export default function MediaTabs({
         );
       }
       if (recapUrl) {
+        const proxiedRecapUrl = recapUrl.replace(/^http:\/\/4\.247\.144\.148:9000/, '/minio');
         return (
           <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black">
             <video
-              src={recapUrl}
+              src={proxiedRecapUrl}
               controls
               className="h-full w-full object-contain"
               controlsList="nodownload"

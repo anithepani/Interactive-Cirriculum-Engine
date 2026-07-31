@@ -22,11 +22,15 @@ const nextConfig = {
     // to http://api:8000, the Docker service name). Fallback to localhost for
     // bare `next dev` runs outside Docker. NEVER expose this URL to the client;
     // client fetches must use relative /api/* paths so they go through this proxy.
-    const apiBase = process.env.API_URL || "http://localhost:8000";
+    const apiBase = process.env.API_URL || "http://127.0.0.1:8000";
     return [
       {
         source: "/api/:path*",
         destination: `${apiBase}/api/:path*`,
+      },
+      {
+        source: "/minio/:path*",
+        destination: `http://4.247.144.148:9000/:path*`,
       },
     ];
   },
