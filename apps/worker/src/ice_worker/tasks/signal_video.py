@@ -6,15 +6,15 @@ import os
 import shutil
 import subprocess
 import tempfile
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
-import uuid
 
 from ice_api.models import Artifact, Curriculum
 from ice_shared import settings
 from ice_shared.db import Base, get_engine, get_session_factory, reset_engine, set_tenant_context
 from ice_shared.s3 import get_s3_client
-from sqlalchemy import text
+from sqlalchemy import text, select
 
 from ice_worker.celery_app import celery_app
 
@@ -27,22 +27,25 @@ _STATUS_SKIPPED = "skipped"
 
 async def _ensure_tables() -> None:
     import ice_api.models  # noqa: F401
+
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def _set_status(curriculum_id: uuid.UUID, tenant_id: str, status: str, url: str | None = None) -> None:
+async def _set_status(
+    curriculum_id: uuid.UUID, tenant_id: str, status: str, url: str | None = None
+) -> None:
     set_tenant_context(tenant_id)
     factory = get_session_factory()
     async with factory() as session:
-        c = await session.get(Curriculum, curriculum_id)
-        if c:
-            c.signal_status = status
-            if url:
-                c.signal_video_url = url
-            await session.commit()
+        from sqlalchemy import update
+        values = {"signal_status": status}
+        if url:
+            values["signal_video_url"] = url
+        await session.execute(update(Curriculum).where(Curriculum.id == curriculum_id).values(**values))
+        await session.commit()
 
 
 def _preflight_binary(name: str) -> str | None:
@@ -57,9 +60,14 @@ def _preflight_binary(name: str) -> str | None:
 
 def get_audio_duration(file_path: str) -> float:
     cmd = [
-        "ffprobe", "-v", "error", "-show_entries",
-        "format=duration", "-of",
-        "default=noprint_wrappers=1:nokey=1", file_path
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        file_path,
     ]
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
@@ -77,9 +85,12 @@ def _generate_tts(sentence: str, out_path: str) -> str | None:
     """
     cmd = [
         settings.signal_video.tts_command,
-        "--voice", settings.signal_video.tts_voice,
-        "--text", sentence,
-        "--write-media", out_path,
+        "--voice",
+        settings.signal_video.tts_voice,
+        "--text",
+        sentence,
+        "--write-media",
+        out_path,
     ]
     try:
         subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -112,6 +123,7 @@ Dialogue: 0,0:00:00.00,0:00:{duration:05.2f},Default,,0,0,0,,{text}
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(ass_content)
 
+
 async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
     reset_engine()
     curriculum_id = uuid.UUID(curriculum_id_str)
@@ -122,7 +134,9 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
     # task marks the curriculum skipped and exits without touching Gemini /
     # Remotion / TTS, so a CPU-only free tier is never blocked by this feature.
     if not settings.signal_video.enabled:
-        logger.info("Signal video disabled (SIGNAL_VIDEO_ENABLED=false); skipping cid=%s", curriculum_id)
+        logger.info(
+            "Signal video disabled (SIGNAL_VIDEO_ENABLED=false); skipping cid=%s", curriculum_id
+        )
         await _set_status(curriculum_id, tenant_id, _STATUS_SKIPPED)
         return
 
@@ -145,20 +159,25 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
         return
 
     await _set_status(curriculum_id, tenant_id, "processing")
-    
+
     factory = get_session_factory()
     async with factory() as session:
-        curriculum = await session.get(Curriculum, curriculum_id)
+        curriculum = (await session.execute(select(Curriculum).where(Curriculum.id == curriculum_id))).scalar_one_or_none()
         if not curriculum:
             raise ValueError(f"Curriculum {curriculum_id} not found")
-        
-        target_duration = min(1 + 0.5 * math.log(max(1, curriculum.duration or 3600) / 60.0), 3.5) * 60
+
+        target_duration = (
+            min(1 + 0.5 * math.log(max(1, curriculum.duration or 3600) / 60.0), 3.5) * 60
+        )
         # ~130 words per min = max words
         max_words = int((target_duration / 60) * 130)
 
         # load transcript
-        from sqlalchemy import select
-        stmt = select(Artifact).where(Artifact.curriculum_id == curriculum_id, Artifact.kind == "transcript")
+
+
+        stmt = select(Artifact).where(
+            Artifact.curriculum_id == curriculum_id, Artifact.kind == "transcript"
+        )
         res = await session.execute(stmt)
         transcript_art = res.scalars().first()
 
@@ -170,17 +189,17 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         transcript_path = os.path.join(tmpdir, "transcript.json")
         s3.download_file(settings.s3.bucket, transcript_art.storage_uri, transcript_path)
-        with open(transcript_path, "r") as f:
+        with open(transcript_path) as f:
             transcript_data = json.load(f)
-            
+
         sentences = []
         for seg in transcript_data.get("segments", []):
             text = seg.get("text", "").strip()
             if text:
                 sentences.append(text)
-        
+
         full_text = " ".join(sentences)
-        
+
         worker_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         apps_dir = os.path.dirname(worker_dir)
         remotion_dir = os.path.join(apps_dir, "remotion")
@@ -189,6 +208,7 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
         # Hardcoding the model name silently broke this task when the name was
         # not served; list_models() + fallback makes failures loud.
         from ice_worker.tasks._gemini import get_gemini_model
+
         model = get_gemini_model(generation_config={"response_mime_type": "application/json"})
 
         # Cap the transcript sent to Gemini. Sending 50k chars made generation
@@ -212,23 +232,29 @@ Return a JSON array of EXACTLY this shape:
 Transcript:
 {full_text[:transcript_chars]}
 """
-        logger.info(f"Sending prompt to Gemini for signal video (max words: {max_words}, max slides: {max_slides}, transcript chars: {transcript_chars})")
+        logger.info(
+            f"Sending prompt to Gemini for signal video (max words: {max_words}, max slides: {max_slides}, transcript chars: {transcript_chars})"
+        )
         resp = model.generate_content(prompt)
         try:
             clean_text = resp.text.strip()
-            if clean_text.startswith("```json"): clean_text = clean_text[7:]
-            if clean_text.endswith("```"): clean_text = clean_text[:-3]
+            if clean_text.startswith("```json"):
+                clean_text = clean_text[7:]
+            if clean_text.endswith("```"):
+                clean_text = clean_text[:-3]
             segments = json.loads(clean_text)
         except Exception as e:
             logger.error(f"Gemini failed: {e}")
             await _set_status(curriculum_id, tenant_id, "failed")
             return
-            
+
         slides_data = []
 
         # Cap slide count so render time stays bounded on CPU. Gemini may
         # return more than max_slides; keep the first N.
-        selected = segments[: settings.signal_video.max_slides] if isinstance(segments, list) else []
+        selected = (
+            segments[: settings.signal_video.max_slides] if isinstance(segments, list) else []
+        )
 
         # TTS: run the per-slide edge-tts calls in a thread pool instead of
         # serially. Each call is a blocking network round-trip (~1-2s), so N
@@ -275,11 +301,14 @@ Transcript:
         # composition resolution (defaults to 1280x720 — see Root.tsx).
         props_path = os.path.join(tmpdir, "props.json")
         with open(props_path, "w") as f_props:
-            json.dump({
-                "slides": slides_data,
-                "width": settings.signal_video.width,
-                "height": settings.signal_video.height,
-            }, f_props)
+            json.dump(
+                {
+                    "slides": slides_data,
+                    "width": settings.signal_video.width,
+                    "height": settings.signal_video.height,
+                },
+                f_props,
+            )
 
         final_video_path = os.path.join(tmpdir, "signal_video.mp4")
 
@@ -292,14 +321,23 @@ Transcript:
         # missing npx fails loudly instead of shell-swallowing the error.
         npx_bin = _preflight_binary(settings.signal_video.remotion_command)
         render_cmd = [
-            npx_bin, "remotion", "render", "src/index.ts", "MainComp", final_video_path,
-            "--props", props_path,
+            npx_bin,
+            "remotion",
+            "render",
+            "src/index.ts",
+            "MainComp",
+            final_video_path,
+            "--props",
+            props_path,
         ]
         logger.info("Rendering Remotion video... %s", " ".join(render_cmd))
         try:
             res_render = subprocess.run(
-                render_cmd, cwd=remotion_dir,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                render_cmd,
+                cwd=remotion_dir,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
             if res_render.returncode != 0:
                 logger.error("Remotion render error: %s\n%s", res_render.stderr, res_render.stdout)
@@ -322,43 +360,30 @@ Transcript:
 
         # 5. Upload to S3
         s3_key = f"tenants/{tenant_id}/curricula/{curriculum_id}/signal_video.mp4"
-        s3.upload_file(final_video_path, settings.s3.bucket, s3_key, ExtraArgs={'ContentType': 'video/mp4'})
-        
+        s3.upload_file(
+            final_video_path, settings.s3.bucket, s3_key, ExtraArgs={"ContentType": "video/mp4"}
+        )
+
         async with factory() as session:
-            c = await session.get(Curriculum, curriculum_id)
-            if c:
-                new_art = Artifact(
-                    tenant_id=tenant_id,
-                    curriculum_id=curriculum_id,
-                    kind="signal_video",
-                    storage_uri=s3_key
-                )
-                session.add(new_art)
-                await session.commit()
+            new_art = Artifact(
+                tenant_id=tenant_id,
+                curriculum_id=curriculum_id,
+                kind="signal_video",
+                storage_uri=s3_key,
+            )
+            session.add(new_art)
 
-        # Generate a browser-valid presigned URL via an external-facing MinIO
-        # client (mirrors recap.py). String-replacing the internal minio:9000
-        # host can invalidate the S3 signature; signing against the external
-        # endpoint avoids that entirely.
-        import boto3
-        from botocore.config import Config
+            await session.commit()
 
-        external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", "http://localhost:9000")
-        external_s3 = boto3.client(
-            's3',
-            endpoint_url=external_endpoint,
-            aws_access_key_id=settings.s3.access_key,
-            aws_secret_access_key=settings.s3.secret_key,
-            config=Config(signature_version='s3v4'),
-            region_name=settings.s3.region,
-        )
-        presigned = external_s3.generate_presigned_url(
-            'get_object',
-            Params={'Bucket': settings.s3.bucket, 'Key': s3_key},
-            ExpiresIn=7 * 24 * 3600,
-        )
+        # Build a simple public URL via the external endpoint.
+        # The MinIO bucket has public-download policy so no presigned
+        # signature is needed — avoids signature-invalidation when the
+        # hostname changes (e.g. plain IP vs sslip.io proxy).
+        external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", "http://localhost:9000").rstrip("/")
+        public_url = f"{external_endpoint}/{settings.s3.bucket}/{s3_key}"
 
-        await _set_status(curriculum_id, tenant_id, "ready", presigned)
+        await _set_status(curriculum_id, tenant_id, "ready", public_url)
+
 
 async def _run_with_failover(curriculum_id: str, tenant_id: str) -> None:
     try:
@@ -366,7 +391,7 @@ async def _run_with_failover(curriculum_id: str, tenant_id: str) -> None:
     except Exception as exc:
         logger.error(f"Signal video generation failed: {exc}", exc_info=True)
         try:
-            await _set_status(curriculum_id, tenant_id, "failed")
+            await _set_status(uuid.UUID(curriculum_id), tenant_id, "failed")
         except Exception:
             pass
         raise

@@ -1,37 +1,37 @@
 from __future__ import annotations
-import sys
-import os
+
 import ast
-import subprocess
-import tempfile
+import asyncio
 import contextlib
 import logging
-import asyncio
+import os
 import re
+import subprocess
+import sys
+import tempfile
 import traceback
-from difflib import SequenceMatcher
-from typing import List, Optional, Dict, Any
 import uuid
+from difflib import SequenceMatcher
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
-from pydantic import BaseModel, AnyUrl
-
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from ice_shared.db import get_session, set_tenant_context
+from pydantic import AnyUrl, BaseModel
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ice_api.auth_utils import get_current_user
 from ice_api.models import (
-    Curriculum,
-    CurriculumStatus,
-    Tenant,
-    Segment,
+    Checkpoint,
     Concept,
     ConceptEdge,
-    Checkpoint,
+    Curriculum,
+    CurriculumStatus,
     Exercise,
-    User,
-    SkillModel,
+    Segment,
     Session,
+    SkillModel,
+    User,
 )
 from ice_api.process import process_video, trigger_recap, trigger_signal
 
@@ -49,7 +49,9 @@ logger = logging.getLogger(__name__)
 _SANDBOX_TIMEOUT = 10
 
 
-def _run_code_against_test(solution: str, test: str, language: str = "python") -> tuple[bool, str, str]:
+def _run_code_against_test(
+    solution: str, test: str, language: str = "python"
+) -> tuple[bool, str, str]:
     """Run ``solution + test`` once; return (passed, stdout, stderr).
 
     Tries Judge0 first (only if SANDBOX_BACKEND=judge0 and reachable), else a
@@ -73,7 +75,9 @@ def _run_code_against_test(solution: str, test: str, language: str = "python") -
         return False, "", f"Unsupported language for local fallback: {language}"
     path = ""
     try:
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as f:
             f.write(program)
             path = f.name
         proc = subprocess.run(
@@ -93,7 +97,7 @@ def _run_code_against_test(solution: str, test: str, language: str = "python") -
                 os.unlink(path)
 
 
-def _collect_tests(data: Dict[str, Any], ex_type: str) -> list[str]:
+def _collect_tests(data: dict[str, Any], ex_type: str) -> list[str]:
     """Pull the assertion/test strings out of an exercise payload."""
     tests: list[str] = []
     if ex_type == "debug":
@@ -104,7 +108,7 @@ def _collect_tests(data: Dict[str, Any], ex_type: str) -> list[str]:
 
 
 def _validate_tests_against_reference(
-    tests: list[str], data: Dict[str, Any], language: str
+    tests: list[str], data: dict[str, Any], language: str
 ) -> list[str]:
     """Drop tests that the exercise's own reference solution fails.
 
@@ -155,16 +159,20 @@ def _is_skeleton_code(answer: str) -> bool:
         real = []
         for node in body:
             # A bare string expression is a docstring — ignore it.
-            if isinstance(node, ast.Expr) and isinstance(
-                getattr(node, "value", None), ast.Constant
-            ) and isinstance(node.value.value, str):
+            if (
+                isinstance(node, ast.Expr)
+                and isinstance(getattr(node, "value", None), ast.Constant)
+                and isinstance(node.value.value, str)
+            ):
                 continue
             if isinstance(node, ast.Pass):
                 continue
             # `...` (Ellipsis) stub.
-            if isinstance(node, ast.Expr) and isinstance(
-                getattr(node, "value", None), ast.Constant
-            ) and node.value.value is Ellipsis:
+            if (
+                isinstance(node, ast.Expr)
+                and isinstance(getattr(node, "value", None), ast.Constant)
+                and node.value.value is Ellipsis
+            ):
                 continue
             # `raise NotImplementedError` stub.
             if isinstance(node, ast.Raise):
@@ -179,10 +187,7 @@ def _is_skeleton_code(answer: str) -> bool:
             real.append(node)
         return len(real) == 0
 
-    funcs = [
-        n for n in ast.walk(tree)
-        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-    ]
+    funcs = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
     if funcs:
         # Skeleton iff every defined function is a no-op.
         return all(_body_is_noop(fn.body) for fn in funcs)
@@ -214,7 +219,7 @@ def _differential_test(answer: str, reference: str, language: str) -> tuple[bool
     return passed, learner_out, "" if passed else "Output does not match the reference solution."
 
 
-def _evaluate_code_submission(answer: str, data: Dict[str, Any], ex_type: str) -> Dict[str, Any]:
+def _evaluate_code_submission(answer: str, data: dict[str, Any], ex_type: str) -> dict[str, Any]:
     """Execute learner code against hidden tests; return passed + stdout/stderr."""
     tests = _collect_tests(data, ex_type)
     language = str(data.get("language", "python") or "python")
@@ -295,7 +300,7 @@ async def _update_skill_model(
     session: AsyncSession,
     user_id: uuid.UUID,
     cp: Checkpoint,
-    exercise: Optional[Exercise],
+    exercise: Exercise | None,
     passed: bool,
 ) -> None:
     """Upsert the learner's SkillModel row for this checkpoint's concept."""
@@ -351,9 +356,7 @@ async def _update_skill_model(
             await session.rollback()
 
 
-async def _get_checkpoint_attempt(
-    session: AsyncSession, user_id: uuid.UUID, checkpoint_id: int
-):
+async def _get_checkpoint_attempt(session: AsyncSession, user_id: uuid.UUID, checkpoint_id: int):
     """Return the learner's persisted CheckpointAttempt row, or None."""
     from ice_api.models import CheckpointAttempt
 
@@ -401,7 +404,7 @@ router = APIRouter(prefix="/api/v1/curricula", tags=["curricula"])
 _VALID_DIFFICULTIES = ("easy", "medium", "hard")
 
 
-def _normalise_difficulty(value: Optional[str]) -> str:
+def _normalise_difficulty(value: str | None) -> str:
     """Clamp an arbitrary difficulty string to easy|medium|hard (default medium)."""
     v = (value or "").strip().lower()
     return v if v in _VALID_DIFFICULTIES else "medium"
@@ -409,10 +412,10 @@ def _normalise_difficulty(value: Optional[str]) -> str:
 
 class CurriculumCreate(BaseModel):
     video_url: AnyUrl
-    title: Optional[str] = None
+    title: str | None = None
     # Phase 4: learner-selected difficulty (easy | medium | hard). Defaults to
     # "medium" so older clients that don't send it behave unchanged.
-    difficulty: Optional[str] = "medium"
+    difficulty: str | None = "medium"
 
 
 class UpdateNotesRequest(BaseModel):
@@ -433,7 +436,7 @@ class ProgressPing(BaseModel):
     watched_delta: float = 0.0
 
 
-def _exercise_payload(exercise: Optional[Exercise]) -> Optional[Dict[str, Any]]:
+def _exercise_payload(exercise: Exercise | None) -> dict[str, Any] | None:
     """Return the exercise JSON the frontend renders, always including ``type``.
 
     New rows store ``{..., question, type}`` via persist_exercises; older rows
@@ -453,7 +456,7 @@ _YT_ID_RE = re.compile(
 )
 
 
-def _extract_youtube_id(url: str) -> Optional[str]:
+def _extract_youtube_id(url: str) -> str | None:
     """Return the 11-char YouTube video id from a URL, or None if not a YT URL."""
     if not url:
         return None
@@ -463,7 +466,7 @@ def _extract_youtube_id(url: str) -> Optional[str]:
 
 async def _find_existing_ready_curriculum(
     session: AsyncSession, tenant_id: uuid.UUID, user_id: uuid.UUID, video_id: str
-) -> Optional[Curriculum]:
+) -> Curriculum | None:
     """Return this *user's* READY curriculum for the same YouTube video, if any.
 
     Scoped per individual learner (``user_id``) within their tenant: two users
@@ -493,93 +496,72 @@ async def _cascade_delete_curriculum(session: AsyncSession, curriculum_id: uuid.
     artifacts. Uses bulk DELETE statements so it is efficient and backend-neutral.
     """
     from sqlalchemy import delete as sa_delete
+
     from ice_api.models import (
+        Artifact,
         CheckpointAttempt,
         ConceptEdge,
         EvalResult,
         SessionEvent,
         Test,
-        Artifact,
     )
 
     # Resolve the id sets we need for grandchild deletes.
     cp_ids = (
-        await session.execute(
-            select(Checkpoint.id).where(Checkpoint.curriculum_id == curriculum_id)
-        )
-    ).scalars().all()
-    concept_ids = (
-        await session.execute(
-            select(Concept.id).where(Concept.curriculum_id == curriculum_id)
-        )
-    ).scalars().all()
-    exercise_ids = (
         (
             await session.execute(
-                select(Exercise.id).where(Exercise.checkpoint_id.in_(cp_ids))
+                select(Checkpoint.id).where(Checkpoint.curriculum_id == curriculum_id)
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
+    )
+    concept_ids = (
+        (await session.execute(select(Concept.id).where(Concept.curriculum_id == curriculum_id)))
+        .scalars()
+        .all()
+    )
+    exercise_ids = (
+        (await session.execute(select(Exercise.id).where(Exercise.checkpoint_id.in_(cp_ids))))
+        .scalars()
+        .all()
         if cp_ids
         else []
     )
     session_ids = (
-        await session.execute(
-            select(Session.id).where(Session.curriculum_id == curriculum_id)
-        )
-    ).scalars().all()
+        (await session.execute(select(Session.id).where(Session.curriculum_id == curriculum_id)))
+        .scalars()
+        .all()
+    )
 
     # 1) Grandchildren of exercises / checkpoints.
     if exercise_ids:
-        await session.execute(
-            sa_delete(EvalResult).where(EvalResult.exercise_id.in_(exercise_ids))
-        )
-        await session.execute(
-            sa_delete(Test).where(Test.exercise_id.in_(exercise_ids))
-        )
+        await session.execute(sa_delete(EvalResult).where(EvalResult.exercise_id.in_(exercise_ids)))
+        await session.execute(sa_delete(Test).where(Test.exercise_id.in_(exercise_ids)))
     if cp_ids:
         await session.execute(
-            sa_delete(CheckpointAttempt).where(
-                CheckpointAttempt.checkpoint_id.in_(cp_ids)
-            )
+            sa_delete(CheckpointAttempt).where(CheckpointAttempt.checkpoint_id.in_(cp_ids))
         )
-        await session.execute(
-            sa_delete(Exercise).where(Exercise.checkpoint_id.in_(cp_ids))
-        )
+        await session.execute(sa_delete(Exercise).where(Exercise.checkpoint_id.in_(cp_ids)))
     # 2) Session events + sessions (watch-time / heartbeats).
     if session_ids:
         await session.execute(
             sa_delete(SessionEvent).where(SessionEvent.session_id.in_(session_ids))
         )
-    await session.execute(
-        sa_delete(Session).where(Session.curriculum_id == curriculum_id)
-    )
+    await session.execute(sa_delete(Session).where(Session.curriculum_id == curriculum_id))
     # 3) Skill model + concept edges keyed off this curriculum's concepts.
     if concept_ids:
-        await session.execute(
-            sa_delete(SkillModel).where(SkillModel.concept_id.in_(concept_ids))
-        )
-        await session.execute(
-            sa_delete(ConceptEdge).where(ConceptEdge.source_id.in_(concept_ids))
-        )
-        await session.execute(
-            sa_delete(ConceptEdge).where(ConceptEdge.target_id.in_(concept_ids))
-        )
+        await session.execute(sa_delete(SkillModel).where(SkillModel.concept_id.in_(concept_ids)))
+        await session.execute(sa_delete(ConceptEdge).where(ConceptEdge.source_id.in_(concept_ids)))
+        await session.execute(sa_delete(ConceptEdge).where(ConceptEdge.target_id.in_(concept_ids)))
     # 4) Direct children of the curriculum.
-    await session.execute(
-        sa_delete(Checkpoint).where(Checkpoint.curriculum_id == curriculum_id)
-    )
-    await session.execute(
-        sa_delete(Concept).where(Concept.curriculum_id == curriculum_id)
-    )
-    await session.execute(
-        sa_delete(Segment).where(Segment.curriculum_id == curriculum_id)
-    )
-    await session.execute(
-        sa_delete(Artifact).where(Artifact.curriculum_id == curriculum_id)
-    )
+    await session.execute(sa_delete(Checkpoint).where(Checkpoint.curriculum_id == curriculum_id))
+    await session.execute(sa_delete(Concept).where(Concept.curriculum_id == curriculum_id))
+    await session.execute(sa_delete(Segment).where(Segment.curriculum_id == curriculum_id))
+    await session.execute(sa_delete(Artifact).where(Artifact.curriculum_id == curriculum_id))
 
 
-@router.get("", response_model=List[Dict[str, Any]])
+@router.get("", response_model=list[dict[str, Any]])
 async def list_curricula(
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
@@ -607,7 +589,7 @@ async def list_curricula(
     # watched timestamp (Session.max_watched_ts) over the curriculum duration.
     # Best-effort: falls back to 0 when there is no session/duration yet, and
     # never fails the list response (max_watched_ts is an additive column).
-    progress_map: Dict[int, float] = {}
+    progress_map: dict[int, float] = {}
     with contextlib.suppress(Exception):
         cur_ids = [c.id for c in curricula]
         if cur_ids:
@@ -645,7 +627,7 @@ async def list_curricula(
     ]
 
 
-@router.post("", response_model=Dict[str, Any])
+@router.post("", response_model=dict[str, Any])
 async def create_curriculum(
     data: CurriculumCreate,
     current_user: User = Depends(get_current_user),
@@ -661,7 +643,7 @@ async def create_curriculum(
         # are NOT treated as duplicates so the user can retry. Non-YouTube URLs
         # (no extractable video id) skip the check. Scoped to the individual
         # user_id so two learners in a tenant can each keep their own instance.
-        video_id = _extract_youtube_id(data.video_url)
+        video_id = _extract_youtube_id(str(data.video_url))
         if video_id:
             existing = await _find_existing_ready_curriculum(
                 session, tenant_id, current_user.id, video_id
@@ -675,7 +657,7 @@ async def create_curriculum(
                             "This video is already in your workspace as "
                             f"\u201c{existing.title}\u201d."
                         ),
-                        "curriculum_id": existing.id,
+                        "curriculum_id": str(existing.id),
                     },
                 )
 
@@ -683,7 +665,7 @@ async def create_curriculum(
             tenant_id=tenant_id,
             user_id=current_user.id,
             title=data.title or "Untitled",
-            source_ref=data.video_url,
+            source_ref=str(data.video_url),
             source_type="youtube" if video_id else "upload",
             difficulty=_normalise_difficulty(data.difficulty),
         )
@@ -692,7 +674,7 @@ async def create_curriculum(
         await session.refresh(curriculum)
 
         # Run processing in background (dispatches the Celery task).
-        asyncio.create_task(process_video(curriculum.id, data.video_url, tenant_id))
+        asyncio.create_task(process_video(curriculum.id, str(data.video_url), tenant_id))
 
         return {"curriculum_id": curriculum.id, "status": "queued"}
 
@@ -704,11 +686,11 @@ async def create_curriculum(
         raise HTTPException(status_code=500, detail=traceback.format_exc())
 
 
-@router.post("/upload", response_model=Dict[str, Any])
+@router.post("/upload", response_model=dict[str, Any])
 async def upload_curriculum(
     file: UploadFile = File(...),
-    title: Optional[str] = Form(None),
-    difficulty: Optional[str] = Form("medium"),
+    title: str | None = Form(None),
+    difficulty: str | None = Form("medium"),
     current_user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ):
@@ -721,8 +703,8 @@ async def upload_curriculum(
     the worker routes on the ref shape (S3 key → local-file ingest). The
     uploaded object is retained in MinIO so the HTML5 player can stream it.
     """
-    from ice_shared.s3 import get_s3_client, tenant_prefix
     from ice_shared import settings as _settings
+    from ice_shared.s3 import get_s3_client, tenant_prefix
 
     try:
         tenant_id = current_user.tenant_id
@@ -761,9 +743,7 @@ async def upload_curriculum(
         await session.commit()
         await session.refresh(curriculum)
 
-        s3_key = (
-            f"{tenant_prefix(tenant_id)}curricula/{curriculum.id}/source_video{ext}"
-        )
+        s3_key = f"{tenant_prefix(tenant_id)}curricula/{curriculum.id}/source_video{ext}"
 
         # ── Stream the upload to a temp file in bounded chunks (size-guarded),
         # then upload to MinIO off the event loop ─────────────────────────
@@ -823,16 +803,17 @@ async def ping():
     return {"ping": "pong"}
 
 
-async def _award_xp_and_streak(session: AsyncSession, user_id: uuid.UUID) -> Dict[str, Any]:
+async def _award_xp_and_streak(session: AsyncSession, user_id: uuid.UUID) -> dict[str, Any]:
     from datetime import date, timedelta
+
     stmt = select(User).where(User.id == user_id)
     user = (await session.execute(stmt)).scalar_one_or_none()
     if not user:
         return {}
-    
+
     xp_gained = 10
     user.xp = (user.xp or 0) + xp_gained
-    
+
     today = date.today()
     if user.last_active_date == today:
         # Already active today
@@ -845,7 +826,7 @@ async def _award_xp_and_streak(session: AsyncSession, user_id: uuid.UUID) -> Dic
         # Streak broken or first time
         user.streak_count = 1
         user.last_active_date = today
-    
+
     await session.flush()
     return {"xp_gained": xp_gained, "total_xp": user.xp, "streak": user.streak_count}
 
@@ -889,9 +870,9 @@ async def evaluate(
             return {"status": "ok", "passed": bool(answer)}
 
         ex_type = exercise.type.value if exercise.type else ""
-        data: Dict[str, Any] = exercise.payload or {}
+        data: dict[str, Any] = exercise.payload or {}
 
-        extra: Dict[str, Any] = {}
+        extra: dict[str, Any] = {}
 
         if ex_type == "mcq":
             options = data.get("options") or []
@@ -911,9 +892,7 @@ async def evaluate(
             # hidden (+ visible) tests. Backend gated by SANDBOX_BACKEND inside
             # run_sandbox; when the sandbox is unavailable it falls back to a
             # local subprocess. Run off the event loop so we never block it.
-            graded = await asyncio.to_thread(
-                _evaluate_code_submission, answer, data, ex_type
-            )
+            graded = await asyncio.to_thread(_evaluate_code_submission, answer, data, ex_type)
             passed = bool(graded.get("passed"))
             extra = {
                 "stdout": graded.get("stdout", ""),
@@ -931,14 +910,10 @@ async def evaluate(
 
         # M11: fold this attempt into the learner's skill model (best-effort;
         # never breaks the eval response). M10 adjusts next-checkpoint difficulty.
-        await _update_skill_model(
-            session, user_id, cp, exercise, passed
-        )
+        await _update_skill_model(session, user_id, cp, exercise, passed)
 
         # Persist the attempt so the marker + locked state survive reloads.
-        await _record_checkpoint_attempt(
-            session, user_id, cp_id, passed, answer
-        )
+        await _record_checkpoint_attempt(session, user_id, cp_id, passed, answer)
 
         gamification = {}
         if passed:
@@ -972,7 +947,7 @@ async def generate_recap(
 
         if curriculum.recap_status == "processing":
             raise HTTPException(status_code=409, detail="Recap is already generating")
-            
+
         curriculum.recap_status = "processing"
         await session.commit()
 
@@ -1032,7 +1007,7 @@ async def delete_curriculum(
 
 
 async def _get_or_create_session(
-    session: AsyncSession, user_id: uuid.UUID, curriculum_id: uuid.UUID
+    session: AsyncSession, user_id: uuid.UUID, curriculum_id: uuid.UUID, tenant_id: uuid.UUID
 ):
     """Return the learner's Session row for this curriculum, creating it once."""
     stmt = select(Session).where(
@@ -1041,13 +1016,13 @@ async def _get_or_create_session(
     )
     row = (await session.execute(stmt)).scalars().first()
     if row is None:
-        row = Session(user_id=user_id, curriculum_id=curriculum_id, resume_ts=0.0)
+        row = Session(user_id=user_id, curriculum_id=curriculum_id, tenant_id=tenant_id, resume_ts=0.0)
         session.add(row)
         await session.flush()
     return row
 
 
-@router.get("/{curriculum_id}/progress", response_model=Dict[str, Any])
+@router.get("/{curriculum_id}/progress", response_model=dict[str, Any])
 async def get_progress(
     curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -1071,7 +1046,7 @@ async def get_progress(
     }
 
 
-@router.post("/{curriculum_id}/progress", response_model=Dict[str, Any])
+@router.post("/{curriculum_id}/progress", response_model=dict[str, Any])
 async def post_progress(
     curriculum_id: uuid.UUID,
     ping: ProgressPing,
@@ -1087,7 +1062,7 @@ async def post_progress(
     """
     set_tenant_context(str(current_user.tenant_id))
     try:
-        row = await _get_or_create_session(session, current_user.id, curriculum_id)
+        row = await _get_or_create_session(session, current_user.id, curriculum_id, current_user.tenant_id)
         row.resume_ts = max(0.0, float(ping.position or 0.0))
         prior_max = float(getattr(row, "max_watched_ts", 0.0) or 0.0)
         new_max = max(prior_max, float(ping.max_watched or 0.0), row.resume_ts)
@@ -1109,7 +1084,7 @@ async def post_progress(
         raise HTTPException(status_code=500, detail="Failed to save progress")
 
 
-@router.get("/{curriculum_id}/graph", response_model=Dict[str, Any])
+@router.get("/{curriculum_id}/graph", response_model=dict[str, Any])
 async def get_curriculum_graph(
     curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -1157,7 +1132,7 @@ async def get_curriculum_graph(
                     "relation": e.relation,
                 }
                 for e in edges
-            ]
+            ],
         }
     except HTTPException:
         raise
@@ -1165,7 +1140,8 @@ async def get_curriculum_graph(
         logger.error(f"Error fetching graph: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to fetch graph")
 
-@router.get("/{curriculum_id}", response_model=Dict[str, Any])
+
+@router.get("/{curriculum_id}", response_model=dict[str, Any])
 async def get_curriculum(
     curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -1206,7 +1182,7 @@ async def get_curriculum(
 
         # Fetch this learner's persisted checkpoint attempts (Answer 2) so the
         # frontend can hydrate the donut/markers + locked review after reload.
-        attempt_map: Dict[int, Any] = {}
+        attempt_map: dict[int, Any] = {}
         if checkpoints:
             from ice_api.models import CheckpointAttempt
 
@@ -1274,7 +1250,8 @@ async def get_curriculum(
         logger.error(f"Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{curriculum_id}/video", response_model=Dict[str, Any])
+
+@router.get("/{curriculum_id}/video", response_model=dict[str, Any])
 async def get_upload_video_url(
     curriculum_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
@@ -1309,27 +1286,11 @@ async def get_upload_video_url(
         if not s3_key:
             raise HTTPException(status_code=404, detail="No source video available")
 
-        # Robust external-client pattern (mirrors recap.py:378-401): sign the
-        # URL against the browser-reachable external endpoint so playback works
-        # from outside the docker network.
-        external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", "http://localhost:9000")
-
-        import boto3
-        from botocore.config import Config
-
-        external_s3 = boto3.client(
-            "s3",
-            endpoint_url=external_endpoint,
-            aws_access_key_id=_settings.s3.access_key,
-            aws_secret_access_key=_settings.s3.secret_key,
-            config=Config(signature_version="s3v4"),
-            region_name="us-east-1",
-        )
-        url = external_s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": _settings.s3.bucket, "Key": s3_key},
-            ExpiresIn=7 * 24 * 3600,
-        )
+        # Build a simple public URL via the external endpoint.
+        # The MinIO bucket has public-download policy so no presigned
+        # signature is needed.
+        external_endpoint = os.getenv("MINIO_EXTERNAL_ENDPOINT", "http://localhost:9000").rstrip("/")
+        url = f"{external_endpoint}/{_settings.s3.bucket}/{s3_key}"
 
         return {"video_url": url}
     except HTTPException:
@@ -1355,7 +1316,7 @@ async def start_signal_video(
 
         c.signal_status = "queued"
         await session.commit()
-        
+
         await trigger_signal(curriculum_id, current_user.tenant_id)
         return {"status": "ok"}
     except Exception as e:
