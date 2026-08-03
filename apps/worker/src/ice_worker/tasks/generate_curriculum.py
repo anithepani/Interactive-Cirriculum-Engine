@@ -30,6 +30,16 @@ from ice_worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
+
+class _NonRetriableIngestError(RuntimeError):
+    """Ingest failure that must NOT trigger Celery autoretry.
+
+    Used for YouTube bot-blocks (Tier 3): the block is IP-level, so retrying
+    the same task only wastes attempts and delays the user-facing message that
+    tells them to upload the file directly.
+    """
+
+
 # Windows asyncio fix (matches db/seed/seed.py). Harmless on Linux.
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -214,9 +224,17 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
     # ---- M1: ingest ----
     if _is_youtube_ref(video_ref):
         from ice_ingestion import ingest_video
-        
+        from ice_ingestion._ytdlp import YouTubeBotBlockError
+
         await publish_progress("Downloading YouTube video...")
-        ingest = ingest_video(video_ref, tenant_id, curriculum_id)
+        try:
+            ingest = ingest_video(video_ref, tenant_id, curriculum_id)
+        except YouTubeBotBlockError as exc:
+            # Tier 3: every player client was bot-blocked. Surface the direct
+            # upload fallback to the user and fail cleanly (non-retriable — a
+            # retry hits the same IP-level block).
+            await publish_progress(str(exc))
+            raise _NonRetriableIngestError(str(exc)) from exc
         source_type = "youtube"
     elif _is_upload_ref(video_ref):
         from ice_ingestion import ingest_upload
@@ -464,14 +482,13 @@ async def _mark_failed(
 async def _run_with_failover(
     curriculum_id: str, video_ref: str, tenant_id: str
 ) -> None:
-    """Run the pipeline; on failure mark the row failed within the same event loop.
-
-    Sharing the loop avoids the dead-asyncpg-pool issue where a second
-    asyncio.run creates a fresh loop whose pooled connections are bound to
-    the now-closed first loop.
-    """
+    """Run the pipeline; on failure mark the row failed within the same event loop."""
     try:
         await _run(curriculum_id, video_ref, tenant_id)
+    except _NonRetriableIngestError as exc:
+        # Bot-block / upload-fallback: mark failed but do NOT re-raise so
+        # Celery's autoretry never fires (retrying the same IP block is useless).
+        await _mark_failed(curriculum_id, tenant_id, str(exc))
     except Exception as exc:
         await _mark_failed(curriculum_id, tenant_id, str(exc))
         raise

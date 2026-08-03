@@ -23,10 +23,8 @@ services:
       start_period: 30s
     environment:
       - PYTHONPATH=/app/apps/worker/src:/app/libs/shared/src:/app/libs/contracts/src:/app/apps/api/src
-      - YT_COOKIE_FILE=/app/cookies.txt
     volumes:
       - ../../:/app
-      - /opt/ice/secrets/cookies.txt:/app/cookies.txt:ro
 
   worker:
     build:
@@ -43,15 +41,37 @@ services:
     mem_reservation: 800m
     networks: [ice]
     restart: unless-stopped
+    depends_on: [pot-provider]
     environment:
       - PYTHONPATH=/app/apps/worker/src:/app/libs/shared/src:/app/libs/contracts/src:/app/apps/api/src
-      - YT_COOKIE_FILE=/app/cookies.txt
+      # PO Token provider sidecar: yt-dlp's bgutil plugin calls this HTTP service
+      # to generate the Proof-of-Origin tokens YouTube now requires from
+      # datacenter IPs. This is the primary bot-detection bypass (cookies were
+      # dropped — they kept getting rotated/invalidated on the server).
+      - YT_POT_PROVIDER_BASE_URL=http://pot-provider:4416
+      # Ordered player clients to try on bot-block (maintainer-recommended:
+      # mweb+PO token first, web_safari HLS next, tv last).
+      - YT_PLAYER_CLIENTS=mweb,web_safari,tv
     volumes:
       - ../../:/app
-      # Logged-in YouTube cookies (Netscape format), mounted read-only from a
-      # secret dir outside the git checkout. Refresh via scp (see cookie
-      # runbook / infra/prod/scripts/check_cookies.sh).
-      - /opt/ice/secrets/cookies.txt:/app/cookies.txt:ro
+
+  # PO Token provider (bgutil). Generates YouTube Proof-of-Origin tokens on
+  # demand so yt-dlp can download from the datacenter IP without cookies.
+  # Maintained by a yt-dlp maintainer; self-refreshing, no manual tokens.
+  pot-provider:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    networks: [ice]
+    restart: unless-stopped
+    expose:
+      - "4416"
+    mem_limit: 512m
+    mem_reservation: 256m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4416/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   minio:
     image: minio/minio:latest

@@ -24,7 +24,7 @@ import tempfile
 from typing import Any, Optional
 
 import yt_dlp
-from ice_ingestion._ytdlp import apply_auth
+from ice_ingestion._ytdlp import run_with_client_rotation
 from ice_shared.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,7 @@ def _pick_language(available: dict[str, Any], langs: list[str]) -> Optional[str]
 
 def _probe_subtitles(url: str) -> tuple[dict, dict]:
     """Return (manual_subs, automatic_subs) dicts keyed by language code."""
-    opts = {
+    base_opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
@@ -121,16 +121,19 @@ def _probe_subtitles(url: str) -> tuple[dict, dict]:
         "writesubtitles": True,
         "writeautomaticsub": True,
     }
-    opts = apply_auth(opts)
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False) or {}
-    return (info.get("subtitles") or {}, info.get("automatic_captions") or {})
+
+    def _run(opts: dict) -> tuple[dict, dict]:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False) or {}
+        return (info.get("subtitles") or {}, info.get("automatic_captions") or {})
+
+    return run_with_client_rotation(_run, base_opts)
 
 
 def _download_vtt(url: str, lang: str, automatic: bool, out_dir: str) -> Optional[str]:
     """Download the chosen subtitle track as WebVTT; return its file path."""
     outtmpl = os.path.join(out_dir, "caption.%(ext)s")
-    opts = {
+    base_opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
@@ -141,9 +144,12 @@ def _download_vtt(url: str, lang: str, automatic: bool, out_dir: str) -> Optiona
         "writeautomaticsub": automatic,
         "outtmpl": outtmpl,
     }
-    opts = apply_auth(opts)
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([url])
+
+    def _run(opts: dict) -> None:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
+
+    run_with_client_rotation(_run, base_opts)
     for fname in os.listdir(out_dir):
         if fname.startswith("caption.") and fname.endswith(".vtt"):
             return os.path.join(out_dir, fname)

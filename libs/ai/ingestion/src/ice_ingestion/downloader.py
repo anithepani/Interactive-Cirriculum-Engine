@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yt_dlp
-from ice_ingestion._ytdlp import apply_auth, is_bot_block
+from ice_ingestion._ytdlp import run_with_client_rotation
 from ice_shared.s3 import get_s3_client, tenant_prefix
 from ice_shared.settings import settings
 
@@ -70,16 +70,18 @@ def _ffprobe_duration(path: str) -> float:
 
 def _probe(url: str) -> dict[str, Any]:
     """Fetch metadata without downloading; used for duration validation."""
-    opts = {
+    base_opts = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
     }
-    opts = apply_auth(opts)
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-    return info or {}
+
+    def _run(opts: dict) -> dict[str, Any]:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=False) or {}
+
+    return run_with_client_rotation(_run, base_opts)
 
 
 def _download_video(url: str, out_dir: str) -> str:
@@ -104,19 +106,14 @@ def _download_video(url: str, out_dir: str) -> str:
         "noplaylist": True,
         "ffmpeg_location": os.path.dirname(_find_ffmpeg()) or None,
     }
-    opts = apply_auth(opts)
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
+
+    def _run(o: dict) -> None:
+        with yt_dlp.YoutubeDL(o) as ydl:
             ydl.download([url])
-    except yt_dlp.utils.DownloadError as exc:
-        if is_bot_block(exc):
-            raise RuntimeError(
-                "YouTube blocked the download with a bot-check ('Sign in to "
-                "confirm you're not a bot'). The YT_COOKIE_FILE cookie is "
-                "missing or expired — refresh cookies.txt (see the cookie "
-                "runbook) and retry."
-            ) from exc
-        raise
+
+    # Rotates player clients on bot-block; raises YouTubeBotBlockError (with the
+    # upload-fallback hint) if every client is blocked.
+    run_with_client_rotation(_run, opts)
     # yt-dlp picks the extension; find the downloaded file.
     files = [f for f in os.listdir(out_dir) if f.startswith("source.")]
     if not files:
