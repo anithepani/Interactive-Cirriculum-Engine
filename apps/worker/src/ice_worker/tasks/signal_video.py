@@ -150,14 +150,6 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
         await _set_status(curriculum_id, tenant_id, "failed")
         return
     engine = settings.signal_video.engine
-    if engine == "remotion" and not _preflight_binary(settings.signal_video.remotion_command):
-        logger.error(
-            "Signal video aborting: remotion binary '%s' not on PATH",
-            settings.signal_video.remotion_command,
-        )
-        await _set_status(curriculum_id, tenant_id, "failed")
-        return
-
     await _set_status(curriculum_id, tenant_id, "processing")
 
     factory = get_session_factory()
@@ -200,7 +192,7 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
 
         full_text = " ".join(sentences)
 
-        worker_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        worker_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         apps_dir = os.path.dirname(worker_dir)
         remotion_dir = os.path.join(apps_dir, "remotion")
 
@@ -319,10 +311,21 @@ Transcript:
 
         # 4. Run remotion render. Use the preflight-resolved binary path so a
         # missing npx fails loudly instead of shell-swallowing the error.
-        npx_bin = _preflight_binary(settings.signal_video.remotion_command)
+        local_remotion_bin = os.path.join(remotion_dir, "node_modules", ".bin", "remotion")
+        remotion_bin = (
+            local_remotion_bin
+            if os.path.isfile(local_remotion_bin)
+            else _preflight_binary(settings.signal_video.remotion_command)
+        )
+        if not remotion_bin:
+            logger.error(
+                "Signal video aborting: Remotion CLI not found at %s or on PATH",
+                local_remotion_bin,
+            )
+            await _set_status(curriculum_id, tenant_id, "failed")
+            return
         render_cmd = [
-            npx_bin,
-            "remotion",
+            remotion_bin,
             "render",
             "src/index.ts",
             "MainComp",

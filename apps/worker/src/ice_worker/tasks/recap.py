@@ -188,7 +188,7 @@ async def _run_recap(curriculum_id_str: str, tenant_id: str) -> None:
             start = seg.get("start")
             end = seg.get("end")
             text = seg.get("text", "").strip()
-            if not start or not end or not text:
+            if start is None or end is None or not text:
                 continue
 
             words = seg.get("words")
@@ -315,6 +315,7 @@ Here is the transcript data:
             total_dur += dur
 
         selected.sort(key=lambda x: x["start"])
+        selected = selected[: settings.recap_video.max_clips]
 
         if not selected:
             raise ValueError("No sentences selected for recap")
@@ -354,7 +355,7 @@ Here is the transcript data:
             await session.execute(update(Curriculum).where(Curriculum.id == curriculum_id).values(recap_transcript_html=final_html))
             await session.commit()
 
-        # ---- FFmpeg extraction and stitching (Optimized Multiple-Input Filtergraph) ----
+        # ---- FFmpeg extraction and stitching ----
         output_path = os.path.join(tmpdir, "recap.mp4")
 
         # Check if the source actually has a video track (since audio-only uploads are supported)
@@ -371,88 +372,134 @@ Here is the transcript data:
         try:
             probe_res = subprocess.run(probe_cmd, stdout=subprocess.PIPE, text=True, check=True)
             probe_data = json.loads(probe_res.stdout)
-            has_video = any(s.get("codec_type") == "video" for s in probe_data.get("streams", []))
+            stream_types = {s.get("codec_type") for s in probe_data.get("streams", [])}
+            has_video = "video" in stream_types
+            has_audio = "audio" in stream_types
         except Exception as e:
-            logger.warning(f"Failed to probe video streams: {e}. Defaulting to has_video=True")
+            logger.warning(f"Failed to probe video streams: {e}. Defaulting to video with audio")
             has_video = True
+            has_audio = True
 
-        cmd = ["ffmpeg", "-y"]
-        filter_complex = []
+        if not has_video and not has_audio:
+            raise ValueError("Source artifact contains neither video nor audio")
 
-        concat_inputs = []
+        # Normalize one clip at a time so peak memory is independent of the
+        # number of selected ranges. The final concat is a stream copy because
+        # every intermediate has identical codecs and stream parameters.
+        clip_paths = []
         for i, s in enumerate(selected):
             start_t = max(0, s["start"] - 0.2)
-            dur = (s["end"] - s["start"]) + 0.4
-
-            # Instant input seeking
-            cmd.extend(["-ss", str(start_t), "-t", str(dur), "-i", video_path])
+            dur = max(0.1, (s["end"] - s["start"]) + 0.4)
+            clip_path = os.path.join(tmpdir, f"clip_{i:02d}.mp4")
+            clip_cmd = [
+                "ffmpeg",
+                "-nostdin",
+                "-y",
+                "-ss",
+                f"{start_t:.3f}",
+                "-t",
+                f"{dur:.3f}",
+                "-i",
+                video_path,
+            ]
 
             if has_video:
-                filter_complex.append(f"[{i}:v]setpts=PTS-STARTPTS[v{i}]")
-                filter_complex.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
-                concat_inputs.append(f"[v{i}][a{i}]")
-            else:
-                filter_complex.append(f"[{i}:a]asetpts=PTS-STARTPTS[a{i}]")
-                concat_inputs.append(f"[a{i}]")
-
-        if len(selected) > 0:
-            if has_video:
-                concat_str = (
-                    "".join(concat_inputs) + f"concat=n={len(selected)}:v=1:a=1[v_out][a_out]"
+                clip_cmd.extend(
+                    [
+                        "-vf",
+                        (
+                            f"scale={settings.recap_video.width}:{settings.recap_video.height}:"
+                            "force_original_aspect_ratio=decrease,"
+                            f"pad={settings.recap_video.width}:{settings.recap_video.height}:"
+                            "(ow-iw)/2:(oh-ih)/2,"
+                            f"fps={settings.recap_video.fps},format=yuv420p"
+                        ),
+                        "-c:v",
+                        "libx264",
+                        "-preset",
+                        "ultrafast",
+                        "-crf",
+                        str(settings.recap_video.video_crf),
+                        "-threads",
+                        str(settings.recap_video.threads),
+                    ]
                 )
-                filter_complex.append(concat_str)
-                v_out = "[v_out]"
-                a_out = "[a_out]"
+
+            if has_audio:
+                clip_cmd.extend(
+                    [
+                        "-c:a",
+                        "aac",
+                        "-ar",
+                        "48000",
+                        "-ac",
+                        "2",
+                        "-b:a",
+                        "96k",
+                    ]
+                )
             else:
-                concat_str = "".join(concat_inputs) + f"concat=n={len(selected)}:v=0:a=1[a_out]"
-                filter_complex.append(concat_str)
-                a_out = "[a_out]"
+                clip_cmd.append("-an")
 
-        if has_video:
-            cmd.extend(
-                [
-                    "-filter_complex",
-                    ";".join(filter_complex),
-                    "-map",
-                    v_out,
-                    "-map",
-                    a_out,
-                    "-c:v",
-                    "libx264",
-                    "-preset",
-                    "ultrafast",
-                    "-crf",
-                    "28",
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "128k",
-                    output_path,
-                ]
+            clip_cmd.extend(["-movflags", "+faststart", clip_path])
+            logger.info(
+                "Extracting recap clip %d/%d at %.3fs for %.3fs",
+                i + 1,
+                len(selected),
+                start_t,
+                dur,
             )
-        else:
-            cmd.extend(
-                [
-                    "-filter_complex",
-                    ";".join(filter_complex),
-                    "-map",
-                    a_out,
-                    "-c:a",
-                    "aac",
-                    "-b:a",
-                    "128k",
-                    output_path,
-                ]
-            )
+            try:
+                subprocess.run(
+                    clip_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error("FFmpeg clip %d failed with exit code %s: %s", i, e.returncode, e.stderr)
+                raise RuntimeError(f"FFmpeg failed while extracting recap clip {i}") from e
+            clip_paths.append(clip_path)
 
-        logger.info(f"Running FFmpeg filtergraph (has_video={has_video})...")
+        concat_path = os.path.join(tmpdir, "concat.txt")
+        with open(concat_path, "w", encoding="utf-8") as concat_file:
+            for clip_path in clip_paths:
+                concat_file.write(f"file '{clip_path}'\n")
+
+        concat_cmd = [
+            "ffmpeg",
+            "-nostdin",
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            concat_path,
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            output_path,
+        ]
+        logger.info(
+            "Concatenating %d normalized recap clips (has_video=%s, has_audio=%s)",
+            len(clip_paths),
+            has_video,
+            has_audio,
+        )
         try:
             subprocess.run(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True
+                concat_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                check=True,
+                text=True,
             )
         except subprocess.CalledProcessError as e:
-            logger.error(f"FFmpeg failed with exit code {e.returncode}.\nStderr: {e.stderr}")
-            raise RuntimeError(f"FFmpeg failed: {e.stderr}")
+            logger.error("FFmpeg concat failed with exit code %s: %s", e.returncode, e.stderr)
+            raise RuntimeError("FFmpeg failed while concatenating recap clips") from e
 
         # ---- Upload to S3 ----
         s3_key = f"{tenant_prefix(tenant_id)}curricula/{curriculum_id}/recap.mp4"

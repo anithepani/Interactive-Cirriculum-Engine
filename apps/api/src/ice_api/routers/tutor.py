@@ -1,22 +1,25 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Path
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from typing import List, Optional
+from typing import List
 import google.generativeai as genai
 import os
 import uuid
 
 from ice_api.deps import get_db, get_current_user
 from ice_api.models import Curriculum, User, Checkpoint
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 router = APIRouter(prefix="/api/v1/curricula", tags=["tutor"])
+logger = logging.getLogger(__name__)
 
 class TutorRequest(BaseModel):
     message: str
     video_time: float
-    chat_history: List[dict] = []  # [{"role": "user", "content": "..."}, ...]
+    chat_history: List[dict] = Field(default_factory=list)
 
 class TutorResponse(BaseModel):
     response: str
@@ -29,7 +32,13 @@ async def ask_tutor(
     current_user: User = Depends(get_current_user)
 ):
     # Fetch curriculum and its transcript
-    result = await session.execute(select(Curriculum).where(Curriculum.id == id, Curriculum.user_id == current_user.id))
+    result = await db.execute(
+        select(Curriculum).where(
+            Curriculum.id == id,
+            Curriculum.tenant_id == current_user.tenant_id,
+            or_(Curriculum.user_id == current_user.id, Curriculum.user_id.is_(None)),
+        )
+    )
     curriculum = result.scalar_one_or_none()
     
     if not curriculum:
@@ -65,29 +74,39 @@ async def ask_tutor(
         if relevant_chunks:
             context_text = " ".join(relevant_chunks)
     except Exception as e:
-        print(f"Failed to fetch transcript for curriculum {id}: {e}")
+        logger.warning("Failed to fetch transcript for curriculum=%s: %s", id, e)
 
     # Fetch number of checkpoints
-    cp_result = await session.execute(select(func.count(Checkpoint.id)).where(Checkpoint.curriculum_id == id))
+    cp_result = await db.execute(select(func.count(Checkpoint.id)).where(Checkpoint.curriculum_id == id))
     checkpoint_count = cp_result.scalar_one_or_none() or 0
 
     # Configure Gemini
-    target_model = "gemini-3.5-flash"
+    target_model = None
     try:
-        genai.configure(api_key=os.environ.get("GEMINI_API_KEY"), transport="rest")
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is not set")
+        genai.configure(api_key=api_key, transport="rest")
         available_models = [
             m.name for m in genai.list_models() if "generateContent" in m.supported_generation_methods
         ]
-        for m in ["models/gemini-3.5-flash", "models/gemini-3.1-pro-preview", "models/gemini-flash-latest"]:
+        for m in [
+            "models/gemini-3.1-flash-lite",
+            "models/gemini-3.5-flash",
+            "models/gemini-3.1-pro-preview",
+            "models/gemini-flash-latest",
+        ]:
             if m in available_models:
                 target_model = m.replace("models/", "")
                 break
-        if target_model == "gemini-3.5-flash" and available_models and "models/gemini-3.5-flash" not in available_models:
+        if target_model is None and available_models:
             target_model = available_models[0].replace("models/", "")
+        if target_model is None:
+            raise ValueError("No Gemini models supporting generateContent were found")
+        logger.info("Using Gemini tutor model: %s", target_model)
     except Exception as e:
-        print(f"Warning: Failed to list models: {e}")
-        # fallback to a known good model if list_models fails
-        target_model = "gemini-3.5-flash"
+        logger.warning("Failed to list Gemini models: %s", e)
+        raise HTTPException(status_code=502, detail="Tutor service is temporarily unavailable") from e
     
     system_prompt = f"""
 You are the ICE Socratic AI Tutor, a world-class, highly charismatic, and insightful mentor. You are watching a video alongside the user at timestamp {request.video_time}s.
@@ -122,8 +141,5 @@ CRITICAL RULES:
         
         return {"response": response.text}
     except Exception as e:
-        import traceback
-        with open("/tmp/tutor_error.log", "w") as f:
-            f.write(traceback.format_exc())
-        print(f"Error in ask_tutor: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Tutor generation failed for curriculum=%s", id)
+        raise HTTPException(status_code=502, detail="Tutor service is temporarily unavailable") from e

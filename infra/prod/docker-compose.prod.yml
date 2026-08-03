@@ -36,9 +36,10 @@ services:
     #   --without-gossip/-mingle/-heartbeat removes periodic Redis round-trips.
     #   -s 30 reduces scheduler ticks (one per 30s vs default 5s).
     command: ["uv", "run", "celery", "-A", "ice_worker.celery_app", "worker", "-l", "info", "--without-gossip", "--without-mingle", "--without-heartbeat", "-s", "30", "-c", "1"]
-    # 8 GB VM — worker gets 1.5 GB hard / 800 MB soft (rest for api + minio + caddy + OS)
-    mem_limit: 1500m
-    mem_reservation: 800m
+    # Sequential recap encoding keeps peak usage bounded. Keep headroom for
+    # the API, MinIO, pot-provider, Caddy, and the host OS.
+    mem_limit: 2g
+    mem_reservation: 1g
     networks: [ice]
     restart: unless-stopped
     depends_on: [pot-provider]
@@ -52,9 +53,6 @@ services:
       # Ordered player clients to try on bot-block (maintainer-recommended:
       # mweb+PO token first, web_safari HLS next, tv last).
       - YT_PLAYER_CLIENTS=mweb,web_safari,tv
-    volumes:
-      - ../../:/app
-
   # PO Token provider (bgutil). Generates YouTube Proof-of-Origin tokens on
   # demand so yt-dlp can download from the datacenter IP without cookies.
   # Maintained by a yt-dlp maintainer; self-refreshing, no manual tokens.

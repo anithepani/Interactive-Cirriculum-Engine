@@ -33,7 +33,7 @@ RUN uv sync --no-dev --frozen 2>/dev/null || uv sync --no-dev
 COPY apps/api ./apps/api
 COPY apps/worker ./apps/worker
 COPY apps/remotion ./apps/remotion
-RUN cd apps/remotion && npm install
+RUN cd apps/remotion && npm ci
 
 COPY libs ./libs
 COPY db ./db

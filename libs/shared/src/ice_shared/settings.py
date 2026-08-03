@@ -172,6 +172,19 @@ class _SignalVideo(BaseSettings):
     remotion_command: str = "npx"
 
 
+class _RecapVideo(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="RECAP_VIDEO_")
+    # Normalize each selected clip independently before concatenation. This
+    # bounds FFmpeg memory use on CPU-only workers instead of decoding every
+    # source range concurrently in one filter graph.
+    width: int = 854
+    height: int = 480
+    fps: int = 24
+    video_crf: int = 28
+    threads: int = 1
+    max_clips: int = 12
+
+
 class Settings(BaseSettings):
     """Root settings; import as `from ice_shared import settings`."""
 
@@ -241,6 +254,7 @@ class Settings(BaseSettings):
     vision: _Vision = Field(default_factory=_Vision)
     pipeline: _Pipeline = Field(default_factory=_Pipeline)
     signal_video: _SignalVideo = Field(default_factory=_SignalVideo)
+    recap_video: _RecapVideo = Field(default_factory=_RecapVideo)
 
     @property
     def database_url_resolved(self) -> str:
