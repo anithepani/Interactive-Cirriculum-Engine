@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yt_dlp
+from ice_ingestion._ytdlp import apply_auth, is_bot_block
 from ice_shared.s3 import get_s3_client, tenant_prefix
 from ice_shared.settings import settings
 
@@ -75,10 +76,7 @@ def _probe(url: str) -> dict[str, Any]:
         "skip_download": True,
         "noplaylist": True,
     }
-    if os.path.exists("/app/cookies.txt"):
-        opts["cookiefile"] = "/app/cookies.txt"
-    else:
-        opts["extractor_args"] = {"youtube": ["player_client=android"]}
+    opts = apply_auth(opts)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
     return info or {}
@@ -106,12 +104,19 @@ def _download_video(url: str, out_dir: str) -> str:
         "noplaylist": True,
         "ffmpeg_location": os.path.dirname(_find_ffmpeg()) or None,
     }
-    if os.path.exists("/app/cookies.txt"):
-        opts["cookiefile"] = "/app/cookies.txt"
-    else:
-        opts["extractor_args"] = {"youtube": ["player_client=android"]}
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([url])
+    opts = apply_auth(opts)
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([url])
+    except yt_dlp.utils.DownloadError as exc:
+        if is_bot_block(exc):
+            raise RuntimeError(
+                "YouTube blocked the download with a bot-check ('Sign in to "
+                "confirm you're not a bot'). The YT_COOKIE_FILE cookie is "
+                "missing or expired — refresh cookies.txt (see the cookie "
+                "runbook) and retry."
+            ) from exc
+        raise
     # yt-dlp picks the extension; find the downloaded file.
     files = [f for f in os.listdir(out_dir) if f.startswith("source.")]
     if not files:

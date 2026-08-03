@@ -23,8 +23,10 @@ services:
       start_period: 30s
     environment:
       - PYTHONPATH=/app/apps/worker/src:/app/libs/shared/src:/app/libs/contracts/src:/app/apps/api/src
+      - YT_COOKIE_FILE=/app/cookies.txt
     volumes:
       - ../../:/app
+      - /opt/ice/secrets/cookies.txt:/app/cookies.txt:ro
 
   worker:
     build:
@@ -43,8 +45,13 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONPATH=/app/apps/worker/src:/app/libs/shared/src:/app/libs/contracts/src:/app/apps/api/src
+      - YT_COOKIE_FILE=/app/cookies.txt
     volumes:
       - ../../:/app
+      # Logged-in YouTube cookies (Netscape format), mounted read-only from a
+      # secret dir outside the git checkout. Refresh via scp (see cookie
+      # runbook / infra/prod/scripts/check_cookies.sh).
+      - /opt/ice/secrets/cookies.txt:/app/cookies.txt:ro
 
   minio:
     image: minio/minio:latest

@@ -24,6 +24,7 @@ import tempfile
 from typing import Any, Optional
 
 import yt_dlp
+from ice_ingestion._ytdlp import apply_auth
 from ice_shared.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -120,10 +121,7 @@ def _probe_subtitles(url: str) -> tuple[dict, dict]:
         "writesubtitles": True,
         "writeautomaticsub": True,
     }
-    if os.path.exists("/app/cookies.txt"):
-        opts["cookiefile"] = "/app/cookies.txt"
-    else:
-        opts["extractor_args"] = {"youtube": ["player_client=android"]}
+    opts = apply_auth(opts)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False) or {}
     return (info.get("subtitles") or {}, info.get("automatic_captions") or {})
@@ -143,10 +141,7 @@ def _download_vtt(url: str, lang: str, automatic: bool, out_dir: str) -> Optiona
         "writeautomaticsub": automatic,
         "outtmpl": outtmpl,
     }
-    if os.path.exists("/app/cookies.txt"):
-        opts["cookiefile"] = "/app/cookies.txt"
-    else:
-        opts["extractor_args"] = {"youtube": ["player_client=android"]}
+    opts = apply_auth(opts)
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
     for fname in os.listdir(out_dir):

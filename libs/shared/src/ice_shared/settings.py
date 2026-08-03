@@ -131,6 +131,14 @@ class _Pipeline(BaseSettings):
     # big latency/CPU win. Falls back to ASR when no captions exist.
     prefer_captions: bool = True
     caption_langs: str = "en,en-US,en-GB"  # priority order for subtitle language
+    # YouTube auth for yt-dlp. Server IPs get bot-detected ("Sign in to confirm
+    # you're not a bot"); a logged-in Netscape cookies.txt bypasses this. The
+    # ingestion lib reads the YT_COOKIE_FILE env var directly (default below);
+    # this setting is kept for documentation/parity. Mount the file read-only
+    # into the worker container (see docker-compose.prod.yml).
+    yt_cookie_file: str = "/app/cookies.txt"
+    # Advisory refresh cadence (seconds) for the cookie monitor / alerting.
+    yt_cookie_refresh_interval: int = 604800  # 7 days
     # ── Local file upload (Phase 2) ───────────────────────────────────────
     # Max accepted upload size (bytes) and allowed container extensions. Kept
     # here so the API validates before streaming to MinIO. 2 GiB default.
