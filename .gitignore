@@ -45,6 +45,10 @@ htmlcov/
 *.pem
 *.key
 secrets/
+# YouTube auth cookies must never be committed (live session tokens).
+cookies.txt
+*.cookies
+yt_cookies*.txt
 
 # ---- IDE / editors ----
 .idea/
