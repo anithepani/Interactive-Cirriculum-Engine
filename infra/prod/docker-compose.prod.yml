@@ -51,9 +51,10 @@ services:
       # datacenter IPs. This is the primary bot-detection bypass (cookies were
       # dropped — they kept getting rotated/invalidated on the server).
       - YT_POT_PROVIDER_BASE_URL=http://pot-provider:4416
-      # Ordered player clients to try on bot-block (maintainer-recommended:
-      # mweb+PO token first, web_safari HLS next, tv last).
-      - YT_PLAYER_CLIENTS=mweb,web_safari,tv
+      # Ordered player clients to try on recoverable blocks (bot-check /
+      # LOGIN_REQUIRED). Expanded with tv_embedded + android_vr, which stay
+      # anonymously trusted longer through YouTube's LOGIN_REQUIRED waves.
+      - YT_PLAYER_CLIENTS=mweb,tv_embedded,web_safari,android_vr,tv
       - MINIO_EXTERNAL_ENDPOINT=${MINIO_EXTERNAL_ENDPOINT:-https://4.247.144.148.sslip.io}
       - SIGNAL_VIDEO_REMOTION_PROJECT_DIR=/app/apps/remotion
       - SIGNAL_VIDEO_REMOTION_COMMAND=/app/apps/remotion/node_modules/.bin/remotion

@@ -230,9 +230,18 @@ async def _run(curriculum_id: str, video_ref: str, tenant_id: str) -> None:
         try:
             ingest = ingest_video(video_ref, tenant_id, curriculum_id)
         except YouTubeBotBlockError as exc:
-            # Tier 3: every player client was bot-blocked. Surface the direct
-            # upload fallback to the user and fail cleanly (non-retriable — a
-            # retry hits the same IP-level block).
+            # Tier 3: every player client was exhausted. The exception's message
+            # is already tailored to the failure class (bot-check vs
+            # LOGIN_REQUIRED) so surface it verbatim, then fail cleanly
+            # (non-retriable — a retry hits the same IP/auth-level block).
+            # Log the reason as a structured field so dashboards can attribute
+            # failures to the right tier (bot_blocked vs login_required).
+            logger.warning(
+                "curriculum %s ingest exhausted reason=%s video=%s",
+                curriculum_id,
+                getattr(exc, "reason", "bot_blocked"),
+                video_ref,
+            )
             await publish_progress(str(exc))
             raise _NonRetriableIngestError(str(exc)) from exc
         source_type = "youtube"

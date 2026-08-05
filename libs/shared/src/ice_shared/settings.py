@@ -132,10 +132,14 @@ class _Pipeline(BaseSettings):
     prefer_captions: bool = True
     caption_langs: str = "en,en-US,en-GB"  # priority order for subtitle language
     # YouTube bot-detection bypass via PO Token provider sidecar (bgutil).
-    # Set to the in-network URL of the pot-provider container.
-    yt_pot_provider_base_url: str = ""       # PIPELINE_YT_POT_PROVIDER_BASE_URL
-    # Ordered player clients to try on bot-block (comma-separated).
-    yt_player_clients: str = "mweb,web_safari,tv"  # PIPELINE_YT_PLAYER_CLIENTS
+    # NOTE: the ingestion runtime (ice_ingestion._ytdlp) reads the *bare* env
+    # vars YT_POT_PROVIDER_BASE_URL / YT_PLAYER_CLIENTS directly (set in
+    # docker-compose.prod.yml + .env). These fields mirror the defaults for
+    # documentation/reference only — changing them here does NOT affect the
+    # worker; update the bare env vars instead.
+    yt_pot_provider_base_url: str = ""       # mirror of YT_POT_PROVIDER_BASE_URL
+    # Ordered player clients to try on a recoverable block (bot-check / LOGIN_REQUIRED).
+    yt_player_clients: str = "mweb,tv_embedded,web_safari,android_vr,tv"  # mirror of YT_PLAYER_CLIENTS
     # ── Local file upload (Phase 2) ───────────────────────────────────────
     # Max accepted upload size (bytes) and allowed container extensions. Kept
     # here so the API validates before streaming to MinIO. 2 GiB default.
