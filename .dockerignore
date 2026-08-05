@@ -5,6 +5,7 @@ apps/web/.next
 apps/web/out
 pnpm-lock.yaml
 package-lock.json
+!apps/remotion/package-lock.json
 .pnpm-store
 
 # ---- Python venvs / caches ----

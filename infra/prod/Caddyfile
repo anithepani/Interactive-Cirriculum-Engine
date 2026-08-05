@@ -20,6 +20,15 @@
 		reverse_proxy api:8000
 	}
 
+	# Public curriculum media. Preserve the bucket/key path and proxy through
+	# this TLS origin so the Vercel frontend never receives mixed-content URLs.
+	@artifacts path /ice-artifacts/*
+	handle @artifacts {
+		reverse_proxy minio:9000 {
+			header_up Host {upstream_hostport}
+		}
+	}
+
 	# Frontend is served by Vercel — anything else is a 404.
 	handle {
 		respond "Not Found" 404

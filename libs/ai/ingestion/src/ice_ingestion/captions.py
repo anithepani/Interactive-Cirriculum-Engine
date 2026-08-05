@@ -127,7 +127,7 @@ def _probe_subtitles(url: str) -> tuple[dict, dict]:
             info = ydl.extract_info(url, download=False) or {}
         return (info.get("subtitles") or {}, info.get("automatic_captions") or {})
 
-    return run_with_client_rotation(_run, base_opts)
+    return run_with_client_rotation(_run, base_opts, operation="caption_metadata")
 
 
 def _download_vtt(url: str, lang: str, automatic: bool, out_dir: str) -> Optional[str]:
@@ -149,7 +149,7 @@ def _download_vtt(url: str, lang: str, automatic: bool, out_dir: str) -> Optiona
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
 
-    run_with_client_rotation(_run, base_opts)
+    run_with_client_rotation(_run, base_opts, operation="caption_download")
     for fname in os.listdir(out_dir):
         if fname.startswith("caption.") and fname.endswith(".vtt"):
             return os.path.join(out_dir, fname)

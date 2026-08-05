@@ -35,9 +35,10 @@ else
   exit 1
 fi
 
-# --- 2. End-to-end functional probe (PO token + client rotation) --------------
+# --- 2. End-to-end functional probe using the application's exact options -----
 echo "Validating YouTube extraction against $TEST_VIDEO ..."
-if compose exec -T worker yt-dlp --skip-download --quiet "$TEST_VIDEO"; then
+if compose exec -T worker python /app/infra/prod/scripts/diagnose_youtube.py \
+     --sample "$TEST_VIDEO" | grep -q '"phase": "media_sample", "status": "ok"'; then
   echo "YOUTUBE_OK"
   exit 0
 else

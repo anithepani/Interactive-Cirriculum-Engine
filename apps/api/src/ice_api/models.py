@@ -17,7 +17,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID, ARRAY
 from pgvector.sqlalchemy import Vector
-from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from ice_shared.db import Base
 import enum
@@ -220,6 +219,7 @@ class Session(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, server_default=text("uuid_generate_v4()"))
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     curriculum_id = Column(UUID(as_uuid=True), ForeignKey("curricula.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
     started_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
     resume_ts = Column(Float, default=0.0)
@@ -229,6 +229,10 @@ class Session(Base):
     # watch-time from heartbeat deltas (powers "Hours Learned").
     max_watched_ts = Column(Float, nullable=True, server_default="0", default=0.0)
     watched_seconds = Column(Float, nullable=True, server_default="0", default=0.0)
+    __table_args__ = (
+        UniqueConstraint("user_id", "curriculum_id", name="uq_sessions_user_curriculum"),
+        Index("ix_sessions_tenant", "tenant_id"),
+    )
 
 
 class SessionEvent(Base):

@@ -14,6 +14,7 @@ Client rotation order (YT_PLAYER_CLIENTS env, default: mweb,web_safari,tv):
 """
 from __future__ import annotations
 
+import copy
 import logging
 import os
 from typing import Callable, TypeVar
@@ -93,6 +94,7 @@ class YouTubeBotBlockError(RuntimeError):
 def run_with_client_rotation(
     run: Callable[[dict], _T],
     base_opts: dict,
+    operation: str = "extract",
 ) -> _T:
     """Run *run(opts)* across the configured player clients until one works.
 
@@ -104,17 +106,25 @@ def run_with_client_rotation(
     clients = get_clients() or [None]  # type: ignore[list-item]
     last_exc: BaseException | None = None
     for client in clients:
-        opts = apply_auth(dict(base_opts), client=client)
+        opts = apply_auth(copy.deepcopy(base_opts), client=client)
         try:
             return run(opts)
         except Exception as exc:  # noqa: BLE001 — inspected below
             if is_bot_block(exc):
                 logger.warning(
-                    "player_client=%s bot-blocked by YouTube; trying next client",
+                    "youtube operation=%s player_client=%s result=bot_blocked; trying next client",
+                    operation,
                     client,
                 )
                 last_exc = exc
                 continue
+            logger.warning(
+                "youtube operation=%s player_client=%s result=failed error_type=%s error=%s",
+                operation,
+                client,
+                type(exc).__name__,
+                exc,
+            )
             raise
     raise YouTubeBotBlockError(UPLOAD_FALLBACK_HINT) from last_exc
 

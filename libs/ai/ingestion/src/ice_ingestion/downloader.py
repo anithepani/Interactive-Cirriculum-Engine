@@ -81,7 +81,7 @@ def _probe(url: str) -> dict[str, Any]:
         with yt_dlp.YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=False) or {}
 
-    return run_with_client_rotation(_run, base_opts)
+    return run_with_client_rotation(_run, base_opts, operation="metadata")
 
 
 def _download_video(url: str, out_dir: str) -> str:
@@ -113,7 +113,7 @@ def _download_video(url: str, out_dir: str) -> str:
 
     # Rotates player clients on bot-block; raises YouTubeBotBlockError (with the
     # upload-fallback hint) if every client is blocked.
-    run_with_client_rotation(_run, opts)
+    run_with_client_rotation(_run, opts, operation="media_download")
     # yt-dlp picks the extension; find the downloaded file.
     files = [f for f in os.listdir(out_dir) if f.startswith("source.")]
     if not files:

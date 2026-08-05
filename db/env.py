@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import os
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Add the src folder of ice_shared to the path.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'libs', 'shared', 'src'))
@@ -20,7 +21,9 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-_sync_url = settings.database_url_resolved.replace("+asyncpg", "+psycopg")
+_parts = urlsplit(settings.database_url_resolved.replace("+asyncpg", "+psycopg"))
+_query = [("sslmode" if key == "ssl" else key, value) for key, value in parse_qsl(_parts.query)]
+_sync_url = urlunsplit((_parts.scheme, _parts.netloc, _parts.path, urlencode(_query), _parts.fragment))
 config.set_main_option("sqlalchemy.url", _sync_url)
 
 target_metadata = None  # set to ORM metadata once SQLAlchemy models land (Phase 1)

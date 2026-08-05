@@ -168,8 +168,10 @@ class _SignalVideo(BaseSettings):
     tts_command: str = "edge-tts"
     # TTS voice.
     tts_voice: str = "en-US-ChristopherNeural"
-    # npx binary name to pre-flight for the remotion engine.
-    remotion_command: str = "npx"
+    # Direct Remotion CLI executable. Empty means use the project-local binary.
+    remotion_command: str = ""
+    # Explicit in containers; empty retains source-tree discovery for local dev.
+    remotion_project_dir: str = ""
 
 
 class _RecapVideo(BaseSettings):

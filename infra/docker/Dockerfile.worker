@@ -37,6 +37,7 @@ RUN cd apps/remotion && npm ci
 
 COPY libs ./libs
 COPY db ./db
+COPY infra/prod/scripts/diagnose_youtube.py ./infra/prod/scripts/diagnose_youtube.py
 
 # Install workspace packages with CPU-only torch (--torch-backend cpu keeps the
 # image small by excluding the multi-GB nvidia-* CUDA packages).

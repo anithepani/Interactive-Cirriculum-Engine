@@ -16,8 +16,9 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from ice_shared.db import get_session, set_tenant_context
-from pydantic import AnyUrl, BaseModel
-from sqlalchemy import func, or_, select
+from pydantic import AnyUrl, BaseModel, Field
+from sqlalchemy import func, or_, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ice_api.auth_utils import get_current_user
@@ -30,7 +31,6 @@ from ice_api.models import (
     Exercise,
     Segment,
     Session,
-    SkillModel,
     User,
 )
 from ice_api.process import process_video, trigger_recap, trigger_signal
@@ -429,11 +429,11 @@ class EvaluateRequest(BaseModel):
 
 class ProgressPing(BaseModel):
     # Current playhead position (seconds).
-    position: float = 0.0
+    position: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     # Highest contiguous timestamp the learner has legitimately watched.
-    max_watched: float = 0.0
+    max_watched: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
     # Watch-time accrued since the last ping (seconds of actual playback).
-    watched_delta: float = 0.0
+    watched_delta: float = Field(default=0.0, ge=0.0, le=60.0, allow_inf_nan=False)
 
 
 def _exercise_payload(exercise: Exercise | None) -> dict[str, Any] | None:
@@ -549,9 +549,16 @@ async def _cascade_delete_curriculum(session: AsyncSession, curriculum_id: uuid.
             sa_delete(SessionEvent).where(SessionEvent.session_id.in_(session_ids))
         )
     await session.execute(sa_delete(Session).where(Session.curriculum_id == curriculum_id))
-    # 3) Skill model + concept edges keyed off this curriculum's concepts.
+    # 3) The production skill_model is the aggregate schema from the UUID
+    # baseline and is keyed directly by curriculum_id. Do not compile this
+    # delete through the newer per-concept ORM model: that emits concept_id,
+    # which does not exist in production.
+    await session.execute(
+        text("DELETE FROM skill_model WHERE curriculum_id = :curriculum_id"),
+        {"curriculum_id": curriculum_id},
+    )
+    # Concept edges are keyed off this curriculum's concepts.
     if concept_ids:
-        await session.execute(sa_delete(SkillModel).where(SkillModel.concept_id.in_(concept_ids)))
         await session.execute(sa_delete(ConceptEdge).where(ConceptEdge.source_id.in_(concept_ids)))
         await session.execute(sa_delete(ConceptEdge).where(ConceptEdge.target_id.in_(concept_ids)))
     # 4) Direct children of the curriculum.
@@ -1006,19 +1013,49 @@ async def delete_curriculum(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+async def _get_owned_curriculum(
+    session: AsyncSession,
+    curriculum_id: uuid.UUID,
+    current_user: User,
+) -> Curriculum:
+    stmt = select(Curriculum).where(
+        Curriculum.id == curriculum_id,
+        Curriculum.tenant_id == current_user.tenant_id,
+        or_(Curriculum.user_id == current_user.id, Curriculum.user_id.is_(None)),
+    )
+    curriculum = (await session.execute(stmt)).scalar_one_or_none()
+    if curriculum is None:
+        raise HTTPException(status_code=404, detail="Curriculum not found")
+    return curriculum
+
+
 async def _get_or_create_session(
-    session: AsyncSession, user_id: uuid.UUID, curriculum_id: uuid.UUID, tenant_id: uuid.UUID
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    curriculum_id: uuid.UUID,
+    tenant_id: uuid.UUID,
 ):
-    """Return the learner's Session row for this curriculum, creating it once."""
+    """Return the single learner session, tolerating concurrent first pings."""
     stmt = select(Session).where(
         Session.user_id == user_id,
         Session.curriculum_id == curriculum_id,
-    )
+    ).with_for_update()
     row = (await session.execute(stmt)).scalars().first()
     if row is None:
-        row = Session(user_id=user_id, curriculum_id=curriculum_id, tenant_id=tenant_id, resume_ts=0.0)
-        session.add(row)
-        await session.flush()
+        try:
+            async with session.begin_nested():
+                row = Session(
+                    user_id=user_id,
+                    curriculum_id=curriculum_id,
+                    tenant_id=tenant_id,
+                    resume_ts=0.0,
+                )
+                session.add(row)
+                await session.flush()
+        except IntegrityError:
+            row = (
+                await session.execute(stmt.execution_options(populate_existing=True))
+            ).scalar_one()
     return row
 
 
@@ -1032,6 +1069,7 @@ async def get_progress(
     player can resume where they left off and enforce the anti-scrub ceiling
     (Feature 7)."""
     set_tenant_context(str(current_user.tenant_id))
+    await _get_owned_curriculum(session, curriculum_id, current_user)
     stmt = select(Session).where(
         Session.user_id == current_user.id,
         Session.curriculum_id == curriculum_id,
@@ -1062,22 +1100,21 @@ async def post_progress(
     """
     set_tenant_context(str(current_user.tenant_id))
     try:
+        await _get_owned_curriculum(session, curriculum_id, current_user)
         row = await _get_or_create_session(session, current_user.id, curriculum_id, current_user.tenant_id)
-        row.resume_ts = max(0.0, float(ping.position or 0.0))
+        row.resume_ts = ping.position
         prior_max = float(getattr(row, "max_watched_ts", 0.0) or 0.0)
-        new_max = max(prior_max, float(ping.max_watched or 0.0), row.resume_ts)
-        with contextlib.suppress(Exception):
-            row.max_watched_ts = new_max
-            delta = max(0.0, float(ping.watched_delta or 0.0))
-            # Clamp a single delta so a backgrounded tab can't inflate hours.
-            delta = min(delta, 60.0)
-            row.watched_seconds = float(getattr(row, "watched_seconds", 0.0) or 0.0) + delta
+        new_max = max(prior_max, ping.max_watched, row.resume_ts)
+        row.max_watched_ts = new_max
+        row.watched_seconds = float(row.watched_seconds or 0.0) + ping.watched_delta
         await session.commit()
         return {
             "resume_ts": row.resume_ts,
             "max_watched_ts": float(getattr(row, "max_watched_ts", new_max) or new_max),
             "watched_seconds": float(getattr(row, "watched_seconds", 0.0) or 0.0),
         }
+    except HTTPException:
+        raise
     except Exception as e:
         await session.rollback()
         logger.error(f"post_progress error: {e}", exc_info=True)

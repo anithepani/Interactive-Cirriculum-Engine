@@ -25,6 +25,34 @@ logger = logging.getLogger(__name__)
 _STATUS_SKIPPED = "skipped"
 
 
+def _remotion_project_dir() -> str:
+    """Return the Remotion project copied beside worker under /app/apps."""
+    configured = settings.signal_video.remotion_project_dir.strip()
+    if configured:
+        return os.path.abspath(configured)
+    return os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "remotion")
+    )
+
+
+def _remotion_command(project_dir: str, output_path: str, props_path: str) -> list[str]:
+    configured = settings.signal_video.remotion_command.strip()
+    executable = configured or os.path.join(
+        project_dir, "node_modules", ".bin", "remotion"
+    )
+    if not os.path.isabs(executable):
+        executable = _preflight_binary(executable) or executable
+    return [
+        executable,
+        "render",
+        "src/index.ts",
+        "MainComp",
+        output_path,
+        "--props",
+        props_path,
+    ]
+
+
 async def _ensure_tables() -> None:
     import ice_api.models  # noqa: F401
 
@@ -150,6 +178,22 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
         await _set_status(curriculum_id, tenant_id, "failed")
         return
     engine = settings.signal_video.engine
+    remotion_dir = _remotion_project_dir()
+    if engine == "remotion":
+        required = (
+            os.path.join(remotion_dir, "src", "index.ts"),
+            os.path.join(remotion_dir, "package.json"),
+        )
+        missing = [path for path in required if not os.path.isfile(path)]
+        if missing:
+            logger.error(
+                "Signal video aborting: invalid Remotion project dir=%s missing=%s module=%s",
+                remotion_dir,
+                missing,
+                __file__,
+            )
+            await _set_status(curriculum_id, tenant_id, "failed")
+            return
     await _set_status(curriculum_id, tenant_id, "processing")
 
     factory = get_session_factory()
@@ -191,10 +235,6 @@ async def _run_signal_video(curriculum_id_str: str, tenant_id: str) -> None:
                 sentences.append(text)
 
         full_text = " ".join(sentences)
-
-        worker_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        apps_dir = os.path.dirname(worker_dir)
-        remotion_dir = os.path.join(apps_dir, "remotion")
 
         # Call Gemini (dynamic model selection w/ fallback — shared with recap).
         # Hardcoding the model name silently broke this task when the name was
@@ -309,31 +349,22 @@ Transcript:
             await _set_status(curriculum_id, tenant_id, "failed")
             return
 
-        # 4. Run remotion render. Use the preflight-resolved binary path so a
-        # missing npx fails loudly instead of shell-swallowing the error.
-        local_remotion_bin = os.path.join(remotion_dir, "node_modules", ".bin", "remotion")
-        remotion_bin = (
-            local_remotion_bin
-            if os.path.isfile(local_remotion_bin)
-            else _preflight_binary(settings.signal_video.remotion_command)
-        )
-        if not remotion_bin:
+        # 4. Run the project-local Remotion CLI. The configured command is an
+        # executable, not an npx launcher, so argv has one unambiguous shape.
+        render_cmd = _remotion_command(remotion_dir, final_video_path, props_path)
+        if not os.path.isfile(render_cmd[0]) and not _preflight_binary(render_cmd[0]):
             logger.error(
-                "Signal video aborting: Remotion CLI not found at %s or on PATH",
-                local_remotion_bin,
+                "Signal video aborting: Remotion CLI not found: %s",
+                render_cmd[0],
             )
             await _set_status(curriculum_id, tenant_id, "failed")
             return
-        render_cmd = [
-            remotion_bin,
-            "render",
-            "src/index.ts",
-            "MainComp",
-            final_video_path,
-            "--props",
-            props_path,
-        ]
-        logger.info("Rendering Remotion video... %s", " ".join(render_cmd))
+        logger.info(
+            "Rendering Remotion video argv=%r cwd=%s module=%s",
+            render_cmd,
+            remotion_dir,
+            __file__,
+        )
         try:
             res_render = subprocess.run(
                 render_cmd,
