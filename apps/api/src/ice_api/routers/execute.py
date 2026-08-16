@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from ice_shared import run_sandbox
+from ice_shared import run_sandbox  # type: ignore[import-untyped]
 from pydantic import BaseModel
 
 from ice_api.auth_utils import get_current_user
@@ -30,7 +30,7 @@ class ExecuteResponse(BaseModel):
 async def execute_code(
     request: ExecuteRequest,
     _current_user: Annotated[User, Depends(get_current_user)],
-):
+) -> ExecuteResponse:
     """Execute code only through the configured isolated Judge0 service."""
     try:
         sandbox = run_sandbox(
