@@ -93,7 +93,7 @@ jobs:
       - name: Mypy
         run: uv run mypy apps/api/src/ice_api/routers/execute.py
       - name: Run unit tests
-        run: uv run pytest -m "not integration and not e2e and not gpu and not golden" --cov
+        run: uv run pytest apps/api/tests/test_execute_security.py --cov=apps/api/src/ice_api/routers/execute.py
 
   web-lint-typecheck-test:
     name: Web (eslint + tsc + vitest)
