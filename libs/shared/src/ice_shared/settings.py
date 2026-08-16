@@ -49,8 +49,8 @@ class _Judge0(BaseSettings):
 
 class _Sandbox(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="SANDBOX_")
-    # backend: "subprocess" (host, default = zero-regression) | "judge0"
-    backend: str = "subprocess"
+    # Remote execution is disabled unless an isolated Judge0 backend is explicit.
+    backend: str = "disabled"
     cpu_limit: int = 2
     memory_limit: int = 262144
     time_limit: int = 5

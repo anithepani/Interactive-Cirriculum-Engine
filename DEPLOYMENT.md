@@ -1,6 +1,8 @@
 # ICE Production Deployment Plan
 
 > **Goal:** Deploy the Interactive Curriculum Engine (ICE) to a publicly accessible URL for $0/month (proof-of-concept / demo), with a clear fallback if free tiers are insufficient.
+
+> **Status (2026-08-16):** The previous Neon/Azure/Vercel deployment is retired. This document records the old topology for reference and must be revalidated before reuse. The API must not be redeployed until a new database, queue, storage, sandbox, secrets, and domain configuration have been provisioned.
 >
 > **Status:** Plan. Execute the checklist in §10.
 
@@ -36,7 +38,7 @@
 | Postgres | **Neon** (0.5 GB free, never expires, pgvector supported) |
 | Redis | **Upstash** (10K cmds/day free; provision 3 free DBs) |
 | Object storage | **Cloudflare R2** (10 GB free, zero egress) |
-| Judge0 | **Disabled** — `SANDBOX_BACKEND=subprocess` (Python-only sandbox on API host) |
+| Judge0 | **Required for remote code execution**; otherwise `SANDBOX_BACKEND=disabled` |
 | ASR/OCR | **CPU-only** (`ASR_MODEL=tiny`, `OCR_GPU_ENABLED=false`) |
 | CI/CD | **GitHub Actions** (extend existing `deploy.yml`) |
 | Keep-alive | **UptimeRobot** pinging `/api/health` every 5 min |
@@ -165,14 +167,9 @@ The Ampere A1 Flex shape offers **up to 4 OCPU + 24 GB RAM always-on for free, f
 - Free tier: 100 GB bandwidth, 100 GB-hours build, no spin-down.
 - Auto-deploys on push to `main` via native GitHub integration — no Actions YAML needed for the frontend.
 
-### 2.8 Why disable Judge0?
+### 2.8 Code execution policy
 
-Judge0 requires **privileged Docker** (Docker-in-Docker) to sandbox untrusted code. This is:
-- Not supported on Render/Fly free tiers.
-- A security and operational burden on a shared VM.
-- Overkill for a private POC where you trust the code being executed.
-
-ICE already implements a zero-regression fallback: when `SANDBOX_BACKEND=subprocess` (the default), the `/api/v1/execute` endpoint runs Python via a local `subprocess` with CPU/memory/time limits. This is fine for demos but **is a security risk for multi-user production** — only run code you trust.
+Judge0 or an equivalent isolated execution service is required before enabling `/api/v1/execute`. The API no longer falls back to host subprocess execution. Keep `SANDBOX_BACKEND=disabled` when Judge0 is unavailable; authenticated execution requests will return HTTP 503.
 
 ---
 
@@ -546,8 +543,8 @@ S3_BUCKET=ice-artifacts
 S3_USE_PATH_STYLE=false
 MINIO_EXTERNAL_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
 
-# ── Sandbox (DISABLED — Python subprocess only) ───────────────
-SANDBOX_BACKEND=subprocess
+# ── Sandbox (disabled until isolated Judge0 is provisioned) ───
+SANDBOX_BACKEND=disabled
 JUDGE0_URL=http://localhost:2358
 SANDBOX_CPU_LIMIT=2
 SANDBOX_MEMORY_LIMIT=262144
@@ -910,7 +907,7 @@ If you want searchable logs beyond `docker compose logs`, sign up at https://gra
 
 | Limitation | Impact | Mitigation |
 |---|---|---|
-| `SANDBOX_BACKEND=subprocess` runs untrusted Python on the API host | **Security risk** — code executes with the API process's privileges | Only run code you trust in the POC. For multi-user production, deploy Judge0 on a separate small VM later. The code already has zero-regression fallback (`ice_shared.judge0_client.run_sandbox`). |
+| Judge0 is unavailable | Coding execution returns HTTP 503 | Keep execution disabled until an isolated Judge0 service with resource and network limits is provisioned. |
 | Oracle signup may fail / show "out of capacity" | Blocks deploy entirely | Fallback to Azure for Students ($100 credit, no signup friction) — see §12. Or DigitalOcean via GitHub Student Pack ($200 credit ≈ 16 months). |
 | ARM64 architecture | Possible dep incompatibility | All ICE deps ship aarch64 builds: Playwright (official ARM Linux), Whisper (CPU), ONNX Runtime (official ARM), RapidOCR (ONNX-based), Node 22 (official ARM), Remotion (Node). Verify on first deploy with `docker compose logs worker`. |
 | Neon auto-suspends after ~5 min idle | ~300 ms cold-start on first query | Acceptable for POC. Upgrade to always-on ($19/mo) if demos are latency-sensitive. |

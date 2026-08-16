@@ -1,17 +1,22 @@
 from __future__ import annotations
-import subprocess
-import tempfile
-import os
-from fastapi import APIRouter, HTTPException
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from ice_shared import run_sandbox  # type: ignore[import-untyped]
 from pydantic import BaseModel
-from typing import Optional
+
+from ice_api.auth_utils import get_current_user
+from ice_api.models import User
 
 router = APIRouter(prefix="/api/v1/execute", tags=["execution"])
 
+
 class ExecuteRequest(BaseModel):
     code: str
-    stdin: Optional[str] = ""
+    stdin: str = ""
     language: str = "python"
+
 
 class ExecuteResponse(BaseModel):
     status: str
@@ -20,67 +25,36 @@ class ExecuteResponse(BaseModel):
     output: str
     passed: bool
 
+
 @router.post("", response_model=ExecuteResponse)
-async def execute_code(request: ExecuteRequest):
+async def execute_code(
+    request: ExecuteRequest,
+    _current_user: Annotated[User, Depends(get_current_user)],
+) -> ExecuteResponse:
+    """Execute code only through the configured isolated Judge0 service."""
     try:
-        # ---- Judge0 sandbox path (gated by SANDBOX_BACKEND=judge0) ----------
-        # run_sandbox returns a signal result (backend="subprocess"/"unavailable")
-        # when Judge0 is disabled or unreachable, in which case we fall through
-        # to the original local-subprocess path below (zero-regression).
-        try:
-            from ice_shared import run_sandbox
+        sandbox = run_sandbox(
+            request.code,
+            language=request.language,
+            stdin=request.stdin or "",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The code sandbox is unavailable",
+        ) from exc
 
-            sb = run_sandbox(request.code, language=request.language, stdin=request.stdin or "")
-            if sb.backend == "judge0":
-                output = sb.stdout or sb.stderr or sb.error or "No output"
-                return ExecuteResponse(
-                    status="success",
-                    stdout=sb.stdout,
-                    stderr=sb.stderr or sb.error,
-                    output=output,
-                    passed=bool(sb.passed),
-                )
-        except HTTPException:
-            raise
-        except Exception:  # noqa: BLE001 - never let sandbox wiring break /execute
-            pass
+    if sandbox.backend != "judge0":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Isolated code execution is not configured",
+        )
 
-        # ---- Local subprocess fallback (default) ----------------------------
-        # Only Python is supported in this fallback
-        if request.language != "python":
-            raise HTTPException(status_code=400, detail="Only Python is supported in this fallback")
-
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-            f.write(request.code)
-            f.flush()
-            filename = f.name
-
-        try:
-            result = subprocess.run(
-                ['python', filename],
-                input=request.stdin,
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            stdout = result.stdout or ""
-            stderr = result.stderr or ""
-            passed = result.returncode == 0
-            output = stdout or stderr or "No output"
-            return ExecuteResponse(
-                status="success",
-                stdout=stdout,
-                stderr=stderr,
-                output=output,
-                passed=passed
-            )
-        except subprocess.TimeoutExpired:
-            raise HTTPException(status_code=408, detail="Execution timed out")
-        finally:
-            try:
-                os.unlink(filename)
-            except:
-                pass
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    output = sandbox.stdout or sandbox.stderr or sandbox.error or "No output"
+    return ExecuteResponse(
+        status="success",
+        stdout=sandbox.stdout,
+        stderr=sandbox.stderr or sandbox.error,
+        output=output,
+        passed=bool(sandbox.passed),
+    )
